@@ -923,7 +923,8 @@ export declare interface InstalledExtension {
      */
     readonly integrity?: string;
     /**
-     * Where the package came from: `registry`, `file` or `folder`.
+     * Where the package came from: `registry`, `file`, `folder`, or `seeded`
+     * for an archive the build shipped with.
      *
      * The difference between a dependency and somebody's working tree. A project
      * declaring one that came from a folder was composed against code being
@@ -2363,6 +2364,13 @@ export declare function supportsApiRange(range: string): boolean;
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
  *
+ * **2.2.1** changes nothing an extension can see. It exists because `pack`
+ * never learned about `styles`, which entered the manifest at 2.1.0 below: the
+ * first release built by that packer shipped two archives that download, hash
+ * exactly as the index says, and then will not open, because the one file they
+ * declare was not in them. The fix is in the CLI this package carries, and a
+ * patch is the only honest number for it — see the third row above.
+ *
  * **2.2.0** is badges, in the two halves a badge has, and every part of it is
  * an addition — a minor by the table below, and every package stating `^2.0`
  * goes on installing. `badge` in the manifest is a count over the corpus that
@@ -2395,7 +2403,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "2.2.0";
+export declare const SYNC_API_VERSION: "2.2.1";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
