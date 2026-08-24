@@ -2,9 +2,16 @@
 /**
  * `sync-ext` — what an extension's author runs.
  *
- *   sync-ext build [folder…] [--watch]
- *   sync-ext check [folder…]
- *   sync-ext pack  [folder…] [--out <dir>]
+ *   sync-ext build    [folder…] [--watch]
+ *   sync-ext check    [folder…]
+ *   sync-ext pack     [folder…] [--out <dir>]
+ *   sync-ext registry [folder…] --archives <dir> --base-url <url>
+ *                               [--out <file>] [--ledgers <dir>]
+ *
+ * `registry` is the registry's CI rather than an author's: it reads what `pack`
+ * produced and writes the index the application fetches. It is here rather than
+ * in a script of its own because it reads manifests, and one reader of a
+ * manifest is the whole point of there being a schema.
  *
  * A folder is one extension: the directory holding its `manifest.json`. Several
  * may be named, and naming none means the working directory — a repository of
@@ -21,6 +28,7 @@ import { resolve } from "node:path";
 import { build } from "./build.mjs";
 import { check } from "./check.mjs";
 import { pack } from "./pack.mjs";
+import { registry } from "./registry.mjs";
 import { runtime } from "./contract.mjs";
 
 const argv = process.argv.slice(2);
@@ -41,9 +49,11 @@ function folders() {
     .slice(1)
     .filter((one) => !one.startsWith("--"))
     .filter((one, at, all) => all.indexOf(one) === at);
-  // The value of `--out` is not a folder to operate on.
-  const out = option("out", null);
-  const chosen = named.filter((one) => one !== out);
+  // The value of an option is not a folder to operate on.
+  const values = ["out", "archives", "base-url", "ledgers"]
+    .map((name) => option(name, null))
+    .filter((value) => value !== null);
+  const chosen = named.filter((one) => !values.includes(one));
   return (chosen.length === 0 ? ["."] : chosen).map((one) => resolve(one));
 }
 
@@ -52,9 +62,10 @@ function usage(code) {
     [
       "sync-ext — build, check and pack an extension for Sync.",
       "",
-      "  sync-ext build [folder…] [--watch]",
-      "  sync-ext check [folder…]",
-      "  sync-ext pack  [folder…] [--out <dir>]",
+      "  sync-ext build    [folder…] [--watch]",
+      "  sync-ext check    [folder…]",
+      "  sync-ext pack     [folder…] [--out <dir>]",
+      "  sync-ext registry [folder…] --archives <dir> --base-url <url>",
       "",
       `contract ${runtime().version}`,
       "",
@@ -66,6 +77,31 @@ function usage(code) {
 if (command === undefined || flag("help") || command === "help") usage(0);
 
 let failed = false;
+
+// One index describes every extension there is, so this is the one command
+// that is not per-folder: running it once per extension would write the file
+// once per extension and leave the last one holding only itself.
+if (command === "registry") {
+  const archives = option("archives", null);
+  const baseUrl = option("base-url", null);
+  if (archives === null || baseUrl === null) usage(2);
+  try {
+    const { out, written } = registry(folders(), {
+      archives: resolve(archives),
+      baseUrl,
+      out: resolve(option("out", "registry.json")),
+      ledgers: resolve(option("ledgers", "registry")),
+    });
+    for (const one of written) {
+      process.stdout.write(`${one.id} ${one.version} — ${one.artefact.sha256}\n`);
+    }
+    process.stdout.write(`${out}: ${written.length} extensions\n`);
+  } catch (refused) {
+    process.stderr.write(`${refused.message}\n`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
 
 try {
   for (const folder of folders()) {
