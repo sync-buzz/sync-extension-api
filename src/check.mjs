@@ -27,7 +27,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { RUNTIME_GLOBAL, manifestOf, manifestSchema, runtime } from "./contract.mjs";
+import { RUNTIME_GLOBAL, filesOf, manifestOf, manifestSchema, runtime } from "./contract.mjs";
 
 /**
  * Which columns each frame has.
@@ -147,15 +147,27 @@ export async function check(folder) {
 
   for (const wrong of redefinedTokens(folder)) complain(wrong);
 
+  // Everything the manifest names, asked for in one place. Scattered existence
+  // checks are how `styles` came to be checked nowhere: three sites here each
+  // asked about one field, a fourth field was added, and no site was about it.
+  // A missing file is said once, here, and the sites below only step aside.
+  const fromABuild = new Set([manifest.ui, manifest.styles].filter(Boolean));
+  for (const path of filesOf(manifest)) {
+    if (existsSync(join(folder, path))) continue;
+    complain(
+      fromABuild.has(path)
+        ? `${path} is not there. Build it first.`
+        : `the manifest names ${path}, and there is no such file.`,
+    );
+  }
+
   // Every kind it publishes is its own. Sync refuses the rest; this says so
   // before the package is anywhere near a project's memory.
   const published = new Set();
   for (const path of manifest.types ?? []) {
     const at = join(folder, path);
-    if (!existsSync(at)) {
-      complain(`the manifest names ${path}, and there is no such file.`);
-      continue;
-    }
+    // Said above. Here it is only a definition that cannot be read.
+    if (!existsSync(at)) continue;
     const definition = JSON.parse(readFileSync(at, "utf8"));
     if (!definition.kind?.startsWith(`${manifest.id}.`)) {
       complain(
@@ -183,18 +195,12 @@ export async function check(folder) {
     }
   }
 
-  if (manifest.prompt !== undefined && !existsSync(join(folder, manifest.prompt))) {
-    complain(`the manifest names ${manifest.prompt}, and there is no such file.`);
-  }
-
   const areas = manifest.areas ?? [];
   if (manifest.ui === undefined) return { manifest, problems };
 
   const built = join(folder, manifest.ui);
-  if (!existsSync(built)) {
-    complain(`${manifest.ui} is not there. Build it first.`);
-    return { manifest, problems };
-  }
+  // Said above. Here it only means there is no module to start.
+  if (!existsSync(built)) return { manifest, problems };
 
   const surface = new Proxy({}, { get: () => function stub() { return null; } });
   globalThis[RUNTIME_GLOBAL] = { React: await import("react").then((m) => m.default ?? m), api: surface };

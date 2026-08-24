@@ -54,6 +54,30 @@ export const PACKAGE_NAME = JSON.parse(
   readFileSync(join(root, "package.json"), "utf8"),
 ).name;
 
+/**
+ * Every path a manifest points at, in the order Sync lists them.
+ *
+ * One list, because everything that walks a manifest for its files wants the
+ * same answer: packing copies them, checking asserts they are there, and Sync
+ * refuses an archive that is missing one. It was three walks in this package
+ * until `styles` was added to the manifest, to the schema and to Sync — and to
+ * none of the three. That shipped two packages which download, hash correctly,
+ * and then will not open, because the one file they declare was never packed.
+ *
+ * Mirrors `Manifest::files` in Sync's `sync-extensions` crate. The two lists
+ * are still two, in two languages; what holds them together is that Sync's own
+ * tests open the archives a release ships. A field added there and not here
+ * fails there, loudly, rather than in somebody's marketplace.
+ */
+export function filesOf(manifest) {
+  return [
+    ...(manifest.ui ? [manifest.ui] : []),
+    ...(manifest.styles ? [manifest.styles] : []),
+    ...(manifest.types ?? []),
+    ...(manifest.prompt ? [manifest.prompt] : []),
+  ];
+}
+
 /** Reads an extension's manifest, or says which folder had none. */
 export function manifestOf(folder) {
   try {

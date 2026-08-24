@@ -22,7 +22,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { manifestOf } from "./contract.mjs";
+import { filesOf, manifestOf } from "./contract.mjs";
 
 /**
  * @param folder The extension's own directory.
@@ -32,17 +32,12 @@ import { manifestOf } from "./contract.mjs";
 export function pack(folder, out) {
   const manifest = manifestOf(folder);
 
-  // Every path the manifest points at, in the order the Rust side lists them.
+  // Every path the manifest points at, from `filesOf` rather than walked here.
   // A file in the folder that the manifest does not name is not packed: the
-  // archive is what was declared, not what happened to be lying around. `ui` is
-  // optional — an extension that publishes only a vocabulary has no module, and
-  // packing a stub for it would be a file whose only reader is this script.
-  const files = [
-    "manifest.json",
-    ...(manifest.ui ? [manifest.ui] : []),
-    ...(manifest.types ?? []),
-    ...(manifest.prompt ? [manifest.prompt] : []),
-  ].sort();
+  // archive is what was declared, not what happened to be lying around. Most of
+  // what a manifest names is optional — an extension publishing only a
+  // vocabulary has no module — so the list is whatever this one declares.
+  const files = ["manifest.json", ...filesOf(manifest)].sort();
 
   const staging = mkdtempSync(join(tmpdir(), "syncext-"));
   const hashes = {};

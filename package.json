@@ -19,6 +19,9 @@
     "sdk",
     "contract"
   ],
+  "scripts": {
+    "test": "node --test"
+  },
   "type": "module",
   "types": "./types/index.d.ts",
   "exports": {
