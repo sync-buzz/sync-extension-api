@@ -1,4 +1,4 @@
-# @sync/extension-api
+# @sync-buzz/extension-api
 
 The contract an extension for [Sync](https://sync.buzz) is written against, and
 the tools that hold it to it.
@@ -28,7 +28,7 @@ everything that is not Sync.
 ## Installing it
 
 ```
-npm install --save-dev @sync/extension-api
+npm install --save-dev @sync-buzz/extension-api
 ```
 
 **ESM only**, and both halves of it are: the CLI is an ESM entry point, and the
@@ -72,7 +72,7 @@ knowable once something has been built with it.
 ### What `build` does to two imports
 
 An author writes `import { useState } from "react"` and
-`import { Button } from "@sync/extension-api"` — the point of the whole design
+`import { Button } from "@sync-buzz/extension-api"` — the point of the whole design
 is that an extension reads like the application it extends. Neither import can
 be bundled, so both are replaced with shims that read an object Sync publishes
 on the global *before* it fetches the module. That ordering is the mechanism:
@@ -109,13 +109,13 @@ executing a line of the package.
 
 ## Writing one
 
-Everything an extension may import comes from `@sync/extension-api`, and there
+Everything an extension may import comes from `@sync-buzz/extension-api`, and there
 is nothing else to import: it has no access to Sync's source, so an import that
 reaches past the contract does not resolve. What it exports is a default
 function, and one entry per area its manifest declared:
 
 ```tsx
-import type { ActivationResult, ExtensionHost } from "@sync/extension-api";
+import type { ActivationResult, ExtensionHost } from "@sync-buzz/extension-api";
 
 export default function activate({ id }: ExtensionHost): ActivationResult {
   return { memory: { Provider, Navigator, Workspace, Inspector } };
@@ -182,7 +182,7 @@ Write it. Put your CSS in `src/index.css`, which takes over the entry `sync-ext`
 would otherwise generate — keep the import and add whatever you like under it:
 
 ```css
-@import "@sync/extension-api/extension.css";
+@import "@sync-buzz/extension-api/extension.css";
 @source "./";
 
 .timeline {

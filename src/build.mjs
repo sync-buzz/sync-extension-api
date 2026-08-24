@@ -3,7 +3,7 @@
  *
  * The whole of the interesting part is what happens to two imports. An author
  * writes `import { useState } from "react"` and
- * `import { Button } from "@sync/extension-api"`, which is the point — an
+ * `import { Button } from "@sync-buzz/extension-api"`, which is the point — an
  * extension should read like the application it extends. Neither can be
  * bundled:
  *
@@ -38,7 +38,7 @@ import { build as esbuild, context } from "esbuild";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
-import { RUNTIME_GLOBAL, manifestOf, root, runtime } from "./contract.mjs";
+import { PACKAGE_NAME, RUNTIME_GLOBAL, manifestOf, root, runtime } from "./contract.mjs";
 import { styles } from "./styles.mjs";
 
 const require = createRequire(import.meta.url);
@@ -72,7 +72,12 @@ function hostRuntime(values) {
   return {
     name: "sync-host-runtime",
     setup(builder) {
-      const injected = /^(react|@sync\/extension-api)$/;
+      // Built from the package's own name rather than written out: an author
+      // imports it by that name, and two spellings of one name is how a rename
+      // goes half done.
+      const injected = new RegExp(
+        `^(react|${PACKAGE_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})$`,
+      );
 
       builder.onResolve({ filter: injected }, (argument) => ({
         path: argument.path,

@@ -2197,18 +2197,21 @@ export declare interface SourceListItem {
      */
     readonly note?: string;
     /**
-     * How much of what this row is about is worth a look, and nothing else.
+     * What this row is about, in a figure — or that something happened to it.
      *
-     * The one place in this column that says something about the row's *contents*
-     * rather than about the row, which is why it is a number rather than a word
-     * and why it sits at the trailing edge where a source list on this system
-     * keeps one — Mail, Reminders, Xcode's navigator. It carries no colour: the
-     * count is information, not status, and this window reserves colour for
-     * status and for destruction. Position, weight and the shape of the mark are
-     * what say it, so the row reads the same in greyscale.
+     * The one place in this column that says something about a row's *contents*
+     * rather than about the row, which is why it sits at the trailing edge where
+     * a source list on this system keeps one: Mail, Reminders, Xcode's navigator.
+     * It carries no colour, because a count is information and this window keeps
+     * colour for status and for destruction — position, weight and the shape of
+     * the mark are what say it, so the row reads the same in greyscale.
      *
-     * `count` is drawn as the figure it is; `dot` is drawn as a dot, for a number
-     * too large to read at this size or one nobody could give.
+     * **The two kinds mean different things and are never each other.** A `count`
+     * is how many there are, a standing figure that is as true when nobody is
+     * looking; a `dot` is *something happened, go and look*, which is what a dot
+     * means everywhere else on this system. A dot standing in for a count too
+     * large to print would be one mark carrying both claims, so a large count is
+     * abbreviated instead — see [`BADGE_CEILING`].
      */
     readonly badge?: {
         readonly kind: "count";

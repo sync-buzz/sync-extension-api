@@ -40,6 +40,20 @@ export function manifestSchema() {
  */
 export const RUNTIME_GLOBAL = "__syncExtensionHost__";
 
+/**
+ * What this package is called, read from its own manifest.
+ *
+ * Read rather than written down, because it is matched against an author's
+ * import specifier and a second spelling of it is a rename waiting to go half
+ * done. It already did: the name lived in a regex with an escaped slash, a
+ * rename replaced every plain occurrence and left that one, and the failure was
+ * every extension refusing to build with "could not resolve" — which names the
+ * import and not the stale copy.
+ */
+export const PACKAGE_NAME = JSON.parse(
+  readFileSync(join(root, "package.json"), "utf8"),
+).name;
+
 /** Reads an extension's manifest, or says which folder had none. */
 export function manifestOf(folder) {
   try {
