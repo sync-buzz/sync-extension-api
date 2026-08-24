@@ -143,6 +143,10 @@
     "ui": {
       "description": "The built ES module, relative to the package root. Optional, because an extension that publishes only a vocabulary and a prompt has no code to run — and required the moment it declares a section, because a section is drawn by code.",
       "$ref": "#/$defs/insidePath"
+    },
+    "styles": {
+      "description": "The built stylesheet, relative to the package root. The host adds it to the document when it loads the module and takes it away with it. Optional, and only meaningful beside `ui`: it holds the utility rules this package's own markup uses, which the window's stylesheet does not contain — Tailwind generates only what it finds in the window's own source, and a package is not in it. It carries no values: every colour and step in it is a `var()` the window defines, so retinting the window retints the package.",
+      "$ref": "#/$defs/insidePath"
     }
   },
   "allOf": [
@@ -152,6 +156,11 @@
         "properties": { "areas": { "type": "array", "minItems": 1 } },
         "required": ["areas"]
       },
+      "then": { "required": ["ui"] }
+    },
+    {
+      "$comment": "A stylesheet with no module to style is a file nobody asked for: styles are the markup's, and the markup is in the module.",
+      "if": { "required": ["styles"] },
       "then": { "required": ["ui"] }
     }
   ],

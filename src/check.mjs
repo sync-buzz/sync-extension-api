@@ -23,8 +23,8 @@
 // dialect, and Ajv's default export knows draft-07 and refuses the `$schema`
 // it does not recognise.
 import Ajv from "ajv/dist/2020.js";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { RUNTIME_GLOBAL, manifestOf, manifestSchema, runtime } from "./contract.mjs";
@@ -46,6 +46,74 @@ const FRAMES = {
  * @param folder The extension's own directory.
  * @returns `{ manifest, problems }` — problems is empty when it is well formed.
  */
+/**
+ * The namespaces a package may use and may never declare.
+ *
+ * An extension writes `bg-panel` and `gap-1.5` freely — that is the point, and
+ * the whole of its own stylesheet is rules built from names like these. What it
+ * must not do is say what one of them is *worth*. A package declaring
+ * `--surface-panel` would not restyle itself; it would restyle the window
+ * around it, because these are the variables every column, every sheet and
+ * every menu in the application reads. One package would be repainting a
+ * neighbour's furniture.
+ *
+ * This is the one thing that stays closed, and it is closed narrowly and on
+ * purpose. Everything else an author writes — their own class, their own
+ * variable under their own name, plain CSS, a keyframe, a media query — is
+ * theirs. A vocabulary of permitted utilities was considered and rejected: an
+ * author who needs a panel the shell has no equivalent for has to be able to
+ * build one, and a list of what we thought of in advance is a wall in front of
+ * exactly that person.
+ */
+const OWNED = [
+  "--surface-",
+  "--text-",
+  "--separator",
+  "--state-",
+  "--status-",
+  "--focus-",
+  "--scrim",
+  "--spacing",
+  "--radius-",
+  "--control-height",
+  "--panel-header-height",
+  "--motion-",
+  "--prose-",
+  "--tint-",
+  "--color-",
+  "--font-",
+];
+
+/** Every `--name:` a package declares that belongs to the window. */
+function redefinedTokens(folder) {
+  const wrong = [];
+  const source = join(folder, "src");
+  if (!existsSync(source)) return wrong;
+
+  for (const file of stylesheets(source)) {
+    const text = readFileSync(file, "utf8");
+    for (const [, , name] of text.matchAll(/(^|[;{\s])(--[a-z0-9-]+)\s*:/gi)) {
+      if (!OWNED.some((owned) => name.startsWith(owned))) continue;
+      wrong.push(
+        `${relative(folder, file)} declares ${name}, which is the window's. ` +
+          "Refer to it, never set it: a package that sets one repaints the " +
+          "application around itself rather than styling its own section.",
+      );
+    }
+  }
+  return [...new Set(wrong)];
+}
+
+function stylesheets(from) {
+  const found = [];
+  for (const entry of readdirSync(from, { withFileTypes: true })) {
+    const at = join(from, entry.name);
+    if (entry.isDirectory()) found.push(...stylesheets(at));
+    else if (entry.name.endsWith(".css")) found.push(at);
+  }
+  return found;
+}
+
 export async function check(folder) {
   const problems = [];
   const complain = (message) => problems.push(message);
@@ -76,6 +144,8 @@ export async function check(folder) {
       `it asks for Sync's extension API ${manifest.engines.syncApi}, and this contract is ${supported}.`,
     );
   }
+
+  for (const wrong of redefinedTokens(folder)) complain(wrong);
 
   // Every kind it publishes is its own. Sync refuses the rest; this says so
   // before the package is anywhere near a project's memory.

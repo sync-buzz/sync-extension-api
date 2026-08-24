@@ -2312,6 +2312,16 @@ export declare function supportsApiRange(range: string): boolean;
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
  *
+ * **2.1.0** adds `styles` to the manifest — an optional field, so a minor by
+ * the table below, and every package stating `^2.0` goes on installing. It is
+ * where a package names the stylesheet holding the utility rules its own markup
+ * uses. Before it there was nowhere to put them, and the consequence was not an
+ * error anywhere: Tailwind generates what it finds in the source files it is
+ * given, the window's build reads the window's own `src`, and an extension is
+ * not in it. Every utility a package used and the shell did not happen to use
+ * as well produced no rule at all, so a section drew without its own spacing,
+ * sizing or alignment and read as a redesign.
+ *
  * **2.0.0** is the first of them, and it was paid for exactly what the rule
  * says: `ExtensionType` left the surface. A vocabulary is now a JSON file
  * inside the package rather than a constant in an extension's TypeScript, so
@@ -2320,7 +2330,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "2.0.0";
+export declare const SYNC_API_VERSION: "2.1.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.

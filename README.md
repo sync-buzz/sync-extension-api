@@ -103,5 +103,88 @@ bug.
 
 The loop while writing is *edit, reload, look*: `sync-ext build --watch`, and
 Sync pointed at the folder through **Extensions → From folder…**. A package read
-that way is unsigned by construction and is marked *Development* on its card and
-beside its section in the sidebar.
+that way is unsigned by construction and is marked *Development* on its card.
+
+## Styling: yours to write, the window's to define
+
+**You write Tailwind classes exactly as the application does, and they work.**
+`sync-ext build` compiles the ones your own source uses into the stylesheet your
+manifest names, and Sync adds it to the document when it loads your module:
+
+```json
+{ "ui": "ui/index.js", "styles": "ui/index.css" }
+```
+
+That file has to exist, and it has to be your own. **Sync's stylesheet does not
+contain your classes and cannot.** Tailwind generates the classes it finds in
+the source files it is told to read; the application's build reads the
+application's own `src`, and your package is not in it. Before this existed,
+every utility a package used that the shell did not happen to use as well
+produced no rule at all — no error, no warning, nothing in any file to look at.
+A section mounted, held its state and answered the keyboard, and was drawn
+without a single one of its own margins. It reads as somebody having redesigned
+your extension. It is an empty stylesheet.
+
+### The one rule: refer to a token, never declare one
+
+```css
+/* Yes — the window says what --surface-panel is worth, and you use it. */
+.my-panel { background: var(--color-panel); gap: calc(var(--spacing) * 2); }
+
+/* No — sync-ext check refuses this, and so it should. */
+:root { --surface-panel: #222; }
+```
+
+Every colour, step, radius, control height and duration is a variable the window
+defines on `:root`. Your rules refer to them, so your package ships **no values
+at all** — which is what lets somebody retint the whole application and see your
+extension retint with it, without you rebuilding or republishing anything.
+
+Declare one and you are not restyling your section; you are restyling every
+column, sheet and menu in the application, because those variables are what all
+of them read. That is the only thing `check` closes. What is yours:
+
+- any Tailwind utility, including ones the shell has never used;
+- any class of your own, and any variable under a name of your own;
+- plain CSS — keyframes, media queries, `:has()`, a grid nobody anticipated.
+
+### When you need something we have no component for
+
+Write it. Put your CSS in `src/index.css`, which takes over the entry `sync-ext`
+would otherwise generate — keep the import and add whatever you like under it:
+
+```css
+@import "@sync/extension-api/extension.css";
+@source "./";
+
+.timeline {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  border-inline-start: 1px solid var(--separator);
+}
+@keyframes settle { from { opacity: 0 } to { opacity: 1 } }
+```
+
+`@source "./"` is what tells Tailwind to read your components for classes; if
+you keep source outside `src`, add a line for it. The import brings two things
+and neither carries a value: the theme Sync publishes — declared `@theme
+inline`, so `bg-panel` compiles straight to `var(--surface-panel)` — and
+Tailwind's utilities layer alone, without preflight, because a second reset in a
+document that already has one restyles the window rather than your extension.
+
+### Why a package carries this and not React
+
+They look like the same question and are opposite answers. React must be the
+window's single copy: two of them in one document and the first hook you call
+throws, because the copy holding the dispatcher is not the copy being called.
+Identity is the whole of it — and the same goes for the component library, whose
+portals, focus traps and scroll locks must be one set.
+
+A CSS utility has no identity. `.gap-1\.5` compiles to the same rule wherever it
+is built, so two packages carrying it cost forty identical bytes each and can
+never disagree about what it means. It is the same reason `lucide-react` is
+bundled into your package rather than served by the host: a pure thing with
+nothing to keep in step is cheaper copied than shared.
+
+What must not be copied is the **design** — the values. Those stay in one place,
+and you refer to them.

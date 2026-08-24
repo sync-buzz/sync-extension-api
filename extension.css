@@ -1,0 +1,24 @@
+/*
+ * What an extension's stylesheet is made of.
+ *
+ * One line for an author to write, and two things behind it:
+ *
+ * - **The theme**, generated from the window's own `globals.css` and declared
+ *   `@theme inline`. It gives the names — `bg-panel`, `text-fg-tertiary`,
+ *   `gap-1.5` — and no values: each compiles to a `var()` the window defines on
+ *   `:root`. An extension therefore ships no colour and no spacing step, and
+ *   retinting the window retints it with nothing rebuilt.
+ *
+ * - **The utilities layer, and only that layer.** Importing `tailwindcss`
+ *   whole would also bring preflight, which is a second reset in a document
+ *   that already has one — it would restyle the window around the extension
+ *   rather than the extension.
+ *
+ * Imported from here rather than written in each package because both paths
+ * resolve from *this* directory, where Tailwind and the theme actually live. An
+ * extension depends on the contract and on nothing else.
+ */
+
+@import "tailwindcss/theme.css" layer(theme) theme(reference);
+@import "@sync/extension-api/theme.css";
+@import "tailwindcss/utilities.css" layer(utilities);

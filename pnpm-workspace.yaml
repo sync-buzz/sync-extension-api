@@ -1,4 +1,9 @@
-# esbuild fetches a platform binary in a postinstall script, and it is what
-# `sync-ext build` runs on. Without it there is no bundler and no CLI.
+# Two postinstall scripts are allowed, and both for the same reason: they fetch
+# or build a platform binary that one of `sync-ext`'s commands runs on.
+#
+# - esbuild is the bundler behind `sync-ext build`. Without it there is no CLI.
+# - @parcel/watcher is what Tailwind's CLI watches files with, and `build
+#   --watch` is the loop an author actually works in — edit, reload, look.
 allowBuilds:
+  '@parcel/watcher': true
   esbuild: true

@@ -39,6 +39,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import { RUNTIME_GLOBAL, manifestOf, root, runtime } from "./contract.mjs";
+import { styles } from "./styles.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -118,12 +119,20 @@ export async function build(folder, { watch = false } = {}) {
     plugins: [hostRuntime(contract.values)],
   };
 
+  // The stylesheet is built beside the module and named by the manifest, so a
+  // package that draws nothing has neither and a package that draws carries
+  // both. `styles` is optional in the manifest for the same reason `ui` is:
+  // what is declared is what the package contains.
+  const sheet = manifest.styles;
+
   if (watch) {
     const watcher = await context(options);
     await watcher.watch();
-    return { watching: true, version: contract.version };
+    if (sheet !== undefined) void styles(folder, sheet, { watch: true });
+    return { watching: true, version: contract.version, styles: sheet ?? null };
   }
 
   await esbuild(options);
-  return { watching: false, version: contract.version };
+  if (sheet !== undefined) await styles(folder, sheet, { minify: true });
+  return { watching: false, version: contract.version, styles: sheet ?? null };
 }
