@@ -1,0 +1,4 @@
+# esbuild fetches a platform binary in a postinstall script, and it is what
+# `sync-ext build` runs on. Without it there is no bundler and no CLI.
+allowBuilds:
+  esbuild: true

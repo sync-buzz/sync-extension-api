@@ -1,0 +1,42 @@
+{
+  "name": "@sync/extension-api",
+  "version": "2.0.0",
+  "description": "The contract an extension for Sync is written against, and the tools that hold it to it.",
+  "license": "MIT",
+  "type": "module",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts"
+    },
+    "./manifest.schema.json": "./schema/manifest.schema.json",
+    "./runtime.json": "./runtime.json"
+  },
+  "bin": {
+    "sync-ext": "./src/cli.mjs"
+  },
+  "files": [
+    "types",
+    "schema",
+    "src",
+    "runtime.json"
+  ],
+  "peerDependencies": {
+    "react": "^19",
+    "@types/react": "^19",
+    "class-variance-authority": "^0.7",
+    "clsx": "^2",
+    "lucide-react": "^1",
+    "radix-ui": "^1"
+  },
+  "peerDependenciesMeta": {
+    "@types/react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "esbuild": "^0.25.0"
+  },
+  "packageManager": "pnpm@11.18.0"
+}
