@@ -25,12 +25,40 @@ the first. The schema is written here, and is the exception on purpose: Sync's
 manifest reader is the authority, and this is the same rules stated for
 everything that is not Sync.
 
+## Installing it
+
+```
+npm install --save-dev @sync/extension-api
+```
+
+**ESM only**, and both halves of it are: the CLI is an ESM entry point, and the
+declarations are published under an `exports` map with no CommonJS condition. A
+project consuming it therefore needs either `"type": "module"` in its own
+`package.json` or `"moduleResolution": "bundler"` in its `tsconfig.json` — the
+second is what the extensions in the registry use, because an extension is
+bundled by `sync-ext build` rather than resolved by Node.
+
+There is deliberately **no runtime entry point**. Importing from this package
+gives an extension the *shape* of what the window will hand it; the objects
+themselves arrive at runtime, from the host, and `sync-ext build` marks the
+package external and points it at them. A package that shipped its own copies
+would be a second set of portals, focus traps and scroll locks in one window.
+
 ## The CLI
 
 ```
 sync-ext build [folder…] [--watch]   the module Sync loads
 sync-ext check [folder…]             the schema, the kind prefixes, and the module against its manifest
 sync-ext pack  [folder…] [--out d]   the reproducible .syncext
+```
+
+One more is the registry's own rather than an author's, and it is here because
+it reads manifests and one reader of a manifest is the point of there being a
+schema:
+
+```
+sync-ext registry [folder…] --archives <dir> --base-url <url>
+                            [--out registry.json] [--ledgers registry]
 ```
 
 A folder is one extension: the directory holding its `manifest.json`. Several
