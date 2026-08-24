@@ -88,7 +88,24 @@
             "description": "One of the shapes the shell draws, and the module must fill exactly that frame's columns: browse has a navigator and an inspector, list a navigator, detail an inspector, single neither. Returning a column the frame does not have fails to install rather than being dropped.",
             "enum": ["browse", "list", "detail", "single"]
           },
-          "icon": { "type": "string" }
+          "icon": { "type": "string" },
+          "badge": {
+            "description": "A count the host draws on this section's row. Nothing of the package runs to produce it, which is the point: a section is mounted the first time it is visited, so a number only a mounted section could raise would be missing on the first launch after a project is opened \u2014 exactly when somebody wants it. Omit it for a section with nothing to count.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kinds": {
+                "description": "Which kinds are counted, and omitting it counts every kind this section opens \u2014 the ordinary answer, because the manifest has already said which those are. Name them only where one extension has two sections over one vocabulary. Each is prefixed with the extension id, by the rule opens.kinds reads: a badge over another extension's records is a number nobody can act on.",
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "freshness": {
+                "description": "Which of the states the engine derives are counted, and omitting it counts every state.",
+                "type": "array",
+                "items": { "enum": ["fresh", "unverified", "stale", "invalid"] }
+              }
+            }
+          }
         }
       }
     },

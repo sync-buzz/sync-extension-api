@@ -1,6 +1,6 @@
 {
   "name": "@sync/extension-api",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "The contract an extension for Sync is written against, and the tools that hold it to it.",
   "license": "MIT",
   "type": "module",

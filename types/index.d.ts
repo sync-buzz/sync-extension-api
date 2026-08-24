@@ -219,6 +219,34 @@ export declare interface AreaProviderProps {
 /** The states that mean a claim stopped matching the code. */
 export declare const ATTENTION_STATES: readonly ["stale", "invalid"];
 
+/**
+ * What a section says about its own row, and how it reaches the window.
+ *
+ * Here rather than beside the host's counting, and for the reason `contract.ts`
+ * is here: this is the surface, and the surface may not depend on the loader.
+ * The host imports [`BadgeScope`] from it; an extension imports [`useBadge`],
+ * and the context both use has to be the same object, so it is neither side's
+ * to hold.
+ */
+/**
+ * What an area reports about its own row, and `null` for nothing.
+ *
+ * `"some"` is the answer for a section that knows something is worth a look and
+ * cannot put a number on it. A number is the number; zero is nothing, because a
+ * mark that means none is a mark that means nothing.
+ *
+ * **Reporting nothing is not a report.** The declared count goes on showing
+ * through it, which is what lets a section have both: Chat declares how many
+ * conversations there are, so the row says so before a line of Chat has run and
+ * goes on saying so while nobody is talking to an agent. What the area reports
+ * takes over only while there is something it alone could know — a reply that
+ * arrived while somebody was in another section, which is nowhere in the corpus
+ * and cannot be counted from it. Composing the two is the area's own business:
+ * it is mounted, it holds both numbers, and it decides which one its row should
+ * say.
+ */
+export declare type BadgeReport = number | "some" | null;
+
 export declare function Button({ className, variant, size, asChild, ...props }: React_2.ComponentProps<"button"> & VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
 }): React_2.JSX.Element;
@@ -2168,6 +2196,26 @@ export declare interface SourceListItem {
      * be visible from the column rather than only from the catalogue.
      */
     readonly note?: string;
+    /**
+     * How much of what this row is about is worth a look, and nothing else.
+     *
+     * The one place in this column that says something about the row's *contents*
+     * rather than about the row, which is why it is a number rather than a word
+     * and why it sits at the trailing edge where a source list on this system
+     * keeps one — Mail, Reminders, Xcode's navigator. It carries no colour: the
+     * count is information, not status, and this window reserves colour for
+     * status and for destruction. Position, weight and the shape of the mark are
+     * what say it, so the row reads the same in greyscale.
+     *
+     * `count` is drawn as the figure it is; `dot` is drawn as a dot, for a number
+     * too large to read at this size or one nobody could give.
+     */
+    readonly badge?: {
+        readonly kind: "count";
+        readonly value: number;
+    } | {
+        readonly kind: "dot";
+    };
 }
 
 export declare function SourceTree({ label, items, rootId, activeId, expanded, onSelect, onExpandedChange, indent, }: {
@@ -2312,6 +2360,20 @@ export declare function supportsApiRange(range: string): boolean;
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
  *
+ * **2.2.0** is badges, in the two halves a badge has, and every part of it is
+ * an addition — a minor by the table below, and every package stating `^2.0`
+ * goes on installing. `badge` in the manifest is a count over the corpus that
+ * the host answers **without running a line of the package**, which is what
+ * makes a mark appear on a section nobody has opened: an area is mounted on
+ * first visit, so the launch after a project is opened is exactly when a
+ * running section could report nothing. `useBadge` is the other half, for what
+ * only a running section knows — an agent's reply that arrived while somebody
+ * was in another section is nowhere in the corpus and no query would find it.
+ * Reporting nothing is not a report, so a section may declare a standing count
+ * and speak over it when there is news, and it decides which of the two its row
+ * should say. `SourceListItem` carries the same mark, so a list inside an
+ * extension's own column reads like the window's.
+ *
  * **2.1.0** adds `styles` to the manifest — an optional field, so a minor by
  * the table below, and every package stating `^2.0` goes on installing. It is
  * where a package names the stylesheet holding the utility rules its own markup
@@ -2330,7 +2392,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "2.1.0";
+export declare const SYNC_API_VERSION: "2.2.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
@@ -2663,6 +2725,25 @@ export declare function useAgentSession(key: string | null): AgentSession;
  *   that fills it.
  */
 export declare function useAppMenu(file: WindowCommands | null, enabled?: boolean): void;
+
+/**
+ * Say what this section's row should show, from inside the section.
+ *
+ * The half of a badge a manifest cannot express, and the one an agent's reply
+ * needs: "it answered while you were in another section" is not a state of the
+ * corpus and no query over it would find it.
+ *
+ * **A frozen area goes on reporting.** Selecting another section tells this one
+ * to stop reading the store; it does not stop existing, and this is the one
+ * channel it keeps — the whole point being to say something while nobody is
+ * looking at it. That is a deliberate narrowing of the freeze rule rather than
+ * an exception to it.
+ *
+ * One call per area. This is the row's whole answer rather than a contribution
+ * to it, so two components reporting would be two answers and the later render
+ * would win — which is a coin toss dressed as a rule.
+ */
+export declare function useBadge(report: BadgeReport): void;
 
 /**
  * @param active False while the area holding this is mounted but not selected.

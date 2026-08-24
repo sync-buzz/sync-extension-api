@@ -149,6 +149,7 @@ export async function check(folder) {
 
   // Every kind it publishes is its own. Sync refuses the rest; this says so
   // before the package is anywhere near a project's memory.
+  const published = new Set();
   for (const path of manifest.types ?? []) {
     const at = join(folder, path);
     if (!existsSync(at)) {
@@ -160,6 +161,25 @@ export async function check(folder) {
       complain(
         `"${definition.kind}" in ${path} is not its to publish: a kind it publishes begins with "${manifest.id}.".`,
       );
+    }
+    if (definition.kind !== undefined) published.add(definition.kind);
+  }
+
+  // A badge that counts nothing is the failure this check exists for: it draws
+  // no mark, raises no error and looks exactly like a section with nothing to
+  // report. Sync refuses another extension's kind; only the package's own tree
+  // can say whether a kind of its own is one it ever writes.
+  for (const area of manifest.areas ?? []) {
+    for (const kind of area.badge?.kinds ?? []) {
+      if (!kind.startsWith(`${manifest.id}.`)) {
+        complain(
+          `the area "${area.id}" badges "${kind}", which is not its to count: a kind it publishes begins with "${manifest.id}.".`,
+        );
+      } else if (!published.has(kind) && !(manifest.opens?.kinds ?? []).includes(kind)) {
+        complain(
+          `the area "${area.id}" badges "${kind}", and the package neither publishes nor opens it — the count would be zero for ever, and a badge that never appears looks like a section with nothing to say.`,
+        );
+      }
     }
   }
 
