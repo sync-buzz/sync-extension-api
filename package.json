@@ -1,6 +1,6 @@
 {
   "name": "@sync-buzz/extension-api",
-  "version": "2.2.1",
+  "version": "2.13.0",
   "description": "The contract an extension for Sync is written against, and the tools that hold it to it.",
   "license": "MIT",
   "homepage": "https://sync.buzz",
@@ -28,6 +28,9 @@
     ".": {
       "types": "./types/index.d.ts"
     },
+    "./service": {
+      "types": "./service/index.d.ts"
+    },
     "./manifest.schema.json": "./schema/manifest.schema.json",
     "./runtime.json": "./runtime.json",
     "./theme.css": "./theme.css",
@@ -45,7 +48,8 @@
     "theme.css",
     "extension.css",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "service"
   ],
   "peerDependencies": {
     "@types/react": "^19",

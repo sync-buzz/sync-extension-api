@@ -1,5 +1,5 @@
 {
-  "version": "2.2.1",
+  "version": "2.13.0",
   "values": [
     "ATTENTION_STATES",
     "Button",
@@ -85,6 +85,7 @@
     "modelOption",
     "moveMemoryDocument",
     "parentFolder",
+    "projectRemote",
     "refuseIncompatible",
     "rememberedConversations",
     "renameMemoryFolder",

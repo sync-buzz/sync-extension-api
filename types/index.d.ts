@@ -94,6 +94,15 @@ export declare interface AgentSession {
     readonly transcript: Transcript;
     /** What the agent lets a person choose, the model among it. */
     readonly configuration: readonly SessionConfigOption[];
+    /**
+     * The modes it works in — empty from an agent that has none.
+     *
+     * Which one is current is not here: it is `transcript.mode`, because two
+     * things say it — the state the agent stated and its own
+     * `current_mode_update` — and one field written twice in sequence is one
+     * answer, where two fields would be two.
+     */
+    readonly modes: readonly SessionMode[];
     /** True while a turn is being sent or run. */
     readonly isWorking: boolean;
     /**
@@ -105,6 +114,8 @@ export declare interface AgentSession {
     /** Answers the open question. `null` withdraws it. */
     readonly answer: (optionId: string | null) => Promise<void>;
     readonly choose: (configId: string, valueId: string) => Promise<void>;
+    /** Puts the session into one of {@link AgentSession.modes}. */
+    readonly setMode: (modeId: string) => Promise<void>;
 }
 
 /** What a package says it needs, as its manifest states it. */
@@ -692,36 +703,58 @@ export declare type Entry =
 export declare function explain(failure: unknown): string;
 
 /**
- * What an extension implements, and the whole of what the host calls.
- *
- * Separate from the rest of the surface because it points the other way.
- * Everything else in `extension-api` is something the window hands over; this
- * is the shape of what comes back, and an author writes it rather than calls
- * it. Keeping it in a module of its own is also what keeps the surface
- * acyclic — the loader needs these types and the loader is not part of what an
- * extension may import.
- *
- * ```ts
- * export default function activate({ id }: ExtensionHost): ActivationResult {
- *   return { memory: { Provider, Navigator, Workspace, Inspector } }
- * }
- * ```
- */
-/**
  * What an extension's module is handed when it starts.
  *
- * Only its own id, and that is the whole of it. An earlier draft also handed
- * over React and the surface, because the first spike had no other way to get
- * them across a module boundary; a built extension now writes ordinary imports
- * and the host resolves them, so passing the same objects a second time would
- * be a second way to reach them — and two ways is how one of them goes stale.
+ * Its own id, and what its own manifest let it reach. An earlier draft also
+ * handed over React and the surface, because the first spike had no other way
+ * to get them across a module boundary; a built extension now writes ordinary
+ * imports and the host resolves them, so passing the same objects a second time
+ * would be a second way to reach them — and two ways is how one of them goes
+ * stale.
  *
  * The id is here because it is the one thing a module cannot know about
  * itself: its own name is decided by the manifest beside it, and repeating it
  * in code is a copy that can disagree.
+ *
+ * `net` is here for the same reason, one step further on. Everything else on
+ * the surface is a function a package imports, and a network call cannot be
+ * one: what may be reached is that package's permission, so the call has to
+ * carry which package is making it, and an id passed as an argument would be an
+ * extension stating its own. It is handed over instead, already attributed —
+ * the package holds what it was given, and there is nothing to hold for a
+ * package whose manifest asked for nothing.
  */
 export declare interface ExtensionHost {
     readonly id: string;
+    readonly net: ExtensionNet;
+}
+
+/**
+ * The one door out of this window, for the one package that declared it.
+ *
+ * **It reads, and there is nothing here that writes.** No method, no body, no
+ * header: a URL, and what comes back. A header is where a token goes and a body
+ * is where an instruction goes, and a package installed to read something needs
+ * neither — when one of them has a reason, it arrives as a decision rather than
+ * as a field that was already on the surface.
+ *
+ * Where it may reach is `net.hosts` in the package's own manifest, and the
+ * check is Rust's: the window's `connect-src` does not name the outside at all,
+ * so this is not a restraint on a package that could otherwise fetch — there is
+ * no reach here to take away. Every redirect is checked again, so a hop off the
+ * declared list is refused as firmly as the first request.
+ */
+export declare interface ExtensionNet {
+    /**
+     * Reads one URL, or rejects saying why it did not.
+     *
+     * A `404` is not a rejection: it is an answer to the question the package
+     * asked, and it comes back as a status for the package to explain. What
+     * rejects is a request that never happened — a host the manifest does not
+     * name, a scheme that is not `https`, an answer too large to read, or no
+     * network at all.
+     */
+    read(url: string): Promise<NetAnswer>;
 }
 
 /**
@@ -1202,6 +1235,23 @@ export declare interface MemoryRecord {
     readonly key: string;
     readonly kind: string;
     readonly title: string;
+    /**
+     * The fields this row was asked for, in the store's own words. Untyped for
+     * the same reason [`MemoryDocument.fields`] is: the schema is published at
+     * runtime, and a build that typed them here would be a second copy of it
+     * going out of date on its own.
+     *
+     * Absent unless the selection named some — see `MemorySelection.fields` —
+     * and absent rather than empty, because a row nobody asked fields of should
+     * not carry a member saying so. Optional for a second reason too: a caller
+     * may build a `MemoryRecord` of its own for a row that is not in the corpus,
+     * and a required member would make every one of those a compile error over
+     * a fact it has no answer to.
+     *
+     * A name that was asked for and is missing means the record does not carry
+     * it, which for an optional field is the ordinary answer rather than a fault.
+     */
+    readonly fields?: Readonly<Record<string, unknown>>;
     readonly freshness: Freshness;
     /** The paths the claim's scope covers. Empty is a real answer. */
     readonly scope: readonly string[];
@@ -1253,6 +1303,21 @@ export declare interface MemorySelection {
      * collapsed and its whole contents should still be counted.
      */
     folderScope?: "exact" | "subtree";
+    /**
+     * Which of the type's own fields each row should carry.
+     *
+     * A row is a name and a state, and for years that was every question anybody
+     * asked of a list. A column that groups its rows by a field asks a second
+     * one, and it cannot answer it by opening every record — so it names the
+     * fields it will draw and gets those, rather than the window deciding on its
+     * behalf. Absent asks for none, which is what a list that draws none should
+     * ask for: a type may declare a field of several lines, and a page of prose
+     * per row is a cost nobody reading titles agreed to pay.
+     *
+     * Not a filter. It says what comes back about each record the selection
+     * already chose, and never which records those are.
+     */
+    fields?: readonly string[];
     limit?: number;
     offset?: number;
 }
@@ -1423,6 +1488,40 @@ export declare interface NativeMenuItem {
 }
 
 /**
+ * What an extension implements, and the whole of what the host calls.
+ *
+ * Separate from the rest of the surface because it points the other way.
+ * Everything else in `extension-api` is something the window hands over; this
+ * is the shape of what comes back, and an author writes it rather than calls
+ * it. Keeping it in a module of its own is also what keeps the surface
+ * acyclic — the loader needs these types and the loader is not part of what an
+ * extension may import.
+ *
+ * ```ts
+ * export default function activate({ id }: ExtensionHost): ActivationResult {
+ *   return { memory: { Provider, Navigator, Workspace, Inspector } }
+ * }
+ * ```
+ */
+/**
+ * What came back from a host an extension declared, as it reads it.
+ *
+ * The status and the body, and nothing else. A package that can see the status
+ * tells *this repository has no issues* apart from *this is asking for a
+ * token*, which is the difference a person needs said; headers are the rest of
+ * an HTTP conversation, and a surface that carried one would be a surface that
+ * has to keep in step with a protocol.
+ *
+ * The body is text. What it means is the package's business — every API it
+ * could have been installed to read has its own shape, and a host that parsed
+ * one would be the window having an opinion about somebody else's JSON.
+ */
+export declare interface NetAnswer {
+    readonly status: number;
+    readonly body: string;
+}
+
+/**
  * The record the window has open, read whole and written back as it is edited.
  *
  * Separate from the list it was opened from: a row carries what a row is scanned
@@ -1501,6 +1600,8 @@ export declare interface OpenedSession {
     readonly agentName: string;
     readonly agentVersion: string | null;
     readonly configuration: readonly SessionConfigOption[] | null;
+    /** The modes it works in, or `null` from an agent that has none. */
+    readonly modes: SessionModeState | null;
 }
 
 /** A project the window is open on. */
@@ -1699,6 +1800,23 @@ export declare const PROJECT_LANGUAGES: readonly [{
 export declare type ProjectLanguageId = (typeof PROJECT_LANGUAGES)[number]["id"];
 
 /**
+ * Where this project's code came from, as `origin` names it.
+ *
+ * Asked rather than carried on `OpenProject`, and that is deliberate. The shell
+ * itself never needs it — it would be a field every construction site of an
+ * open project had to answer, including the one in the opening flow describing
+ * a folder that is not a repository yet — and it is a fact that changes without
+ * the project being reopened: somebody adds an `origin` and the answer is
+ * different a second later.
+ *
+ * Whole and unparsed, in git's own spelling. What a URL means belongs to
+ * whoever reads it: this build does not know what GitHub is.
+ *
+ * `null` for a repository with no `origin`, which is an ordinary state.
+ */
+export declare function projectRemote(path: string): Promise<string | null>;
+
+/**
  * What a project calls itself.
  *
  * These live in the project's own memory, not on this machine, so a project
@@ -1841,6 +1959,16 @@ export declare interface RememberedConversation {
     readonly title: string | null;
     readonly openedAtMs: number;
     readonly lastSeenMs: number;
+    /**
+     * Who asked for this conversation, when it was not a person.
+     *
+     * The same shape a live row carries, so a list built from both can group and
+     * label them without caring which half a conversation came from. It matters
+     * most here, in fact: a conversation ordered overnight has *finished* by the
+     * time somebody looks, so the row they see in the morning is this one and not
+     * the live one.
+     */
+    readonly source?: SessionSource;
     /** The record it was kept as, when somebody kept it on this machine. */
     readonly recordKey?: string;
 }
@@ -1958,7 +2086,24 @@ export declare interface ScanOutcome {
     readonly changes: readonly ScanChange[];
 }
 
-export declare function ScrollArea({ className, children, ...props }: React_2.ComponentProps<typeof ScrollArea_2.Root>): React_2.JSX.Element;
+export declare function ScrollArea({ className, children, viewportRef, ...props }: React_2.ComponentProps<typeof ScrollArea_2.Root> & {
+    /**
+     * The node that actually scrolls.
+     *
+     * `ref` on this component reaches the root, which is the box the panel is
+     * measured as and never the one carrying a `scrollTop` — so a caller that has
+     * to move the scroll itself, or read how far from the bottom it is, had no
+     * way to reach the element that answers either question. Radix wraps the
+     * viewport and this file is the only place that can hand it out; a caller
+     * digging for it through the DOM would be tied to markup this file is free to
+     * change.
+     *
+     * Handed out rather than acted on. Following a stream, holding a position,
+     * restoring one — each is a decision about *what is being read*, and a
+     * scroller knows nothing about that.
+     */
+    viewportRef?: React_2.Ref<HTMLDivElement>;
+}): React_2.JSX.Element;
 
 export declare function ScrollBar({ className, orientation, ...props }: React_2.ComponentProps<typeof ScrollArea_2.ScrollAreaScrollbar>): React_2.JSX.Element;
 
@@ -2072,6 +2217,11 @@ export declare type SessionEvent = {
     readonly seq: number;
     readonly atMs: number;
     readonly options: readonly SessionConfigOption[];
+} | {
+    readonly kind: "modes";
+    readonly seq: number;
+    readonly atMs: number;
+    readonly modes: SessionModeState;
 };
 
 /**
@@ -2085,6 +2235,29 @@ export declare function sessionImage(key: string, id: string): Promise<{
     readonly mimeType: string;
     readonly data: string;
 }>;
+
+/**
+ * One way an agent can be asked to behave — Claude Code's Plan, Accept Edits
+ * and Default among them.
+ *
+ * The protocol's own shape, like the configuration above it, and separate from
+ * it for the same reason the two are separate in the protocol: an agent may
+ * state either without the other. A mode is not a model and not a setting; it
+ * is how much the agent may do without asking, which is why it is the choice a
+ * person changes most often and the one that belongs nearest to what they are
+ * typing.
+ */
+export declare interface SessionMode {
+    readonly id: string;
+    readonly name: string;
+    readonly description?: string | null;
+}
+
+/** The modes an agent offers, and the one it is in. */
+export declare interface SessionModeState {
+    readonly currentModeId: string;
+    readonly availableModes: readonly SessionMode[];
+}
 
 /** A running session, as the window lists it. */
 export declare interface SessionRow {
@@ -2105,6 +2278,65 @@ export declare interface SessionRow {
     readonly cwd: string;
     readonly status: SessionStatus;
     readonly openedAtMs: number;
+    /**
+     * Who asked for this conversation, when it was not a person.
+     *
+     * `undefined` is a person, and it is the ordinary answer — the field is
+     * absent rather than null on a conversation somebody started by typing.
+     *
+     * This is what makes a list of conversations honest. A session an extension
+     * ordered is an ordinary session in every other respect: it is in this list,
+     * it can be watched and stopped, and its title is derived from the first
+     * words said in it — which were written by a handler. Without this a person
+     * waking to find three conversations they did not start has nothing to tell
+     * them apart from their own.
+     *
+     * It is also how an extension finds the sessions it ordered itself: match
+     * `source.extensionId` against its own id. There is no second call for that,
+     * deliberately — a list already answers it.
+     */
+    readonly source?: SessionSource;
+}
+
+/**
+ * Who ordered a session, when it was not a person at the keyboard.
+ *
+ * Set when the work was ordered and never edited afterwards, which is what lets
+ * it be believed: it says what asked for this, not what somebody later decided
+ * it was about.
+ */
+export declare interface SessionSource {
+    /**
+     * The order this conversation came out of, as `work.order` answered it.
+     *
+     * Who asked is not enough on its own: one handler may ask three times, and
+     * three rows carrying the same extension and handler are three rows nothing
+     * can tell apart. This is the token the host handed the package when it
+     * ordered, so a package can say *this* conversation is task 42 rather than
+     * *one of these three is*.
+     */
+    readonly work: string;
+    /**
+     * The extension whose handler ordered it, by its manifest id.
+     *
+     * What a package matches against to find its own work, and what a list groups
+     * by. Paired with `extensionName` the way `agentId` is paired with
+     * `agentName`: an id is what things are equal by, a name is what a heading
+     * says.
+     */
+    readonly extensionId: string;
+    /**
+     * What that extension is called, so a heading can be drawn without asking
+     * anything else what it is called.
+     *
+     * What it was called when the work was ordered. A package that renames itself
+     * later does not rewrite what it already asked for.
+     */
+    readonly extensionName: string;
+    /** The handler that ordered it, by the name an occasion calls. */
+    readonly handler: string;
+    /** What it was about, as a record key, when the orderer named one. */
+    readonly about?: string;
 }
 
 /** Where a session is. */
@@ -2160,7 +2392,7 @@ export declare function showNativeContextMenu(event: {
     preventDefault: () => void;
 }, entries: readonly NativeMenuEntry[]): boolean;
 
-export declare function SourceList({ label, items, activeId, rail, onSelect, }: {
+export declare function SourceList({ label, items, activeId, rail, onSelect, onReorder, }: {
     /** What this list is, for assistive technology. */
     label: string;
     items: readonly SourceListItem[];
@@ -2169,6 +2401,16 @@ export declare function SourceList({ label, items, activeId, rail, onSelect, }: 
      *  place. */
     rail?: boolean;
     onSelect: (id: string) => void;
+    /**
+     * The rows were put in this order, and the list may be rearranged at all.
+     *
+     * Absent means the order is not the reader's to decide, which is the honest
+     * state of a list of two fixed screens. What is handed over is every id in
+     * its new order rather than the one that moved: whoever stores an
+     * arrangement stores the whole of it, and a pair of indices would make them
+     * re-derive what this list already worked out.
+     */
+    onReorder?: (ids: readonly string[]) => void;
 }): JSX.Element;
 
 /**
@@ -2183,6 +2425,21 @@ export declare function SourceList({ label, items, activeId, rail, onSelect, }: 
  * It carries no header: a source list on its own surface is legible as
  * navigation without being labelled, and the row that label costs is worth more
  * than the word.
+ *
+ * **Rows can be rearranged where rearranging them means something**, which is
+ * the sections of a project and not the sections of the settings window: the
+ * first list is a place somebody works in every day and the second is two
+ * fixed screens. That is `onReorder`, and a list without it drags nowhere.
+ *
+ * The gesture is the one macOS uses in Finder's sidebar and Mail's mailbox
+ * list, and it is not the one the web usually reaches for. **The rows do not
+ * part.** The row being carried stays where it is and goes quiet, and a hairs'
+ * breadth of a line appears between the two rows it would land between — so
+ * the list under the pointer never moves while somebody is aiming at it, which
+ * is the same rule [`SourceTree`] already keeps for its own drags. The line is
+ * drawn in the tier the badges use rather than in a colour: this window keeps
+ * colour for status and for destruction, and where something will land is
+ * neither.
  */
 export declare interface SourceListItem {
     readonly id: string;
@@ -2364,6 +2621,230 @@ export declare function supportsApiRange(range: string): boolean;
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
  *
+ * **2.13.0** is which repository this project is. `projectRemote` answers with
+ * `origin` as git states it, or `null` where there is none.
+ *
+ * An export added, so a minor.
+ *
+ * It exists because a section that reads a forge had nowhere to get its
+ * subject. The first shape of Issues asked a person to type `owner/name` into
+ * its own column, which is the interface asking for something the machine
+ * already knows — and worse, letting one project be pointed at another
+ * project's issues by a typo nobody would notice.
+ *
+ * A call rather than a member of `OpenProject`, which is where it was first
+ * put. Three things decided it: the shell never needs the value, so every
+ * construction site of an open project would have been answering a question
+ * nobody asked; one of those sites describes a folder in the opening flow that
+ * is not a repository yet; and an `origin` added while the window is open is a
+ * different answer a second later, which a field captured at open cannot give.
+ *
+ * Unparsed, and that is the part worth defending. `git@github.com:o/r.git` and
+ * `https://github.com/o/r` are one repository in two spellings, and turning
+ * either into an owner and a name is a claim about a *forge* — which this build
+ * must not make, for the same reason no type in it may name an extension. The
+ * package that knows what GitHub is does the parsing, and the package that
+ * knows what GitLab is will read the same field.
+ *
+ * **2.12.0** is the node a `ScrollArea` actually scrolls. The component takes
+ * `viewportRef`, which is handed the element Radix wraps and nothing else
+ * changes.
+ *
+ * Panels here own their scrolling, which had always meant the scroller decides
+ * where it sits and nobody asks. A conversation is the case that breaks it: an
+ * answer arriving a chunk at a time has to follow the bottom edge while the
+ * reader is at it and let go the moment they scroll away, and both halves of
+ * that are readings of one number — how far the viewport is from its own end.
+ * The number lives on a node the surface published no way to reach. `ref`
+ * reaches the root, which is the box the panel is measured as and never the one
+ * that scrolls, so an extension either dug the viewport out of the DOM by the
+ * attribute the shell happens to mark it with, or scrolled with
+ * `scrollIntoView` — which asks every scrollable ancestor to help and is the
+ * call the shell's own foundation forbids.
+ *
+ * The node rather than the behaviour, deliberately. Following a stream is one
+ * reading of that number; holding a place in a long document while it re-renders
+ * is another, and restoring one across a remount is a third. A `stickToBottom`
+ * prop would have answered the first and left the other two digging in the DOM
+ * again — and it would have put a chat's own control in a component every panel
+ * in the window draws.
+ *
+ * An optional prop added, so a minor: every existing call site passes nothing
+ * and gets exactly the component it had.
+ *
+ * **2.11.0** is the network, and it is the first thing on this surface that
+ * reaches outside the project at all. `ExtensionHost` gains `net`, `NetAnswer`
+ * and `ExtensionNet` are its shapes, and `net` joins the capabilities.
+ *
+ * A member added to what the host hands over, so a minor: every package stating
+ * `^2.0` goes on installing, and one that never looks at `net` cannot tell this
+ * release from the last.
+ *
+ * It is on the host object rather than an exported function, and that is the
+ * whole design rather than a matter of taste. What a package may reach is a
+ * sentence in its own manifest, so the request has to reach Rust attributed to
+ * a package — and the only two ways to attribute it are an argument the caller
+ * supplies, which is an extension naming its own permission, or a door the host
+ * builds for one package and hands to it. The second is the one that is worth
+ * checking, so it is the one on the surface.
+ *
+ * What it deliberately does not carry: a method, a body, a header, a response
+ * header. Read-only is not a limitation to be lifted when somebody asks — a
+ * header is where a token goes, and a token is a further agreement with a
+ * person rather than a field the surface already had.
+ *
+ * **2.10.0** is the fields a list carries. A row was a name and a state, which
+ * was every question anybody asked of a list until an extension published a
+ * type whose records are grouped by one of their own fields — a task by its
+ * status, in the first case. That question could not be answered from a
+ * listing, and it could not be answered around one either: the only read of a
+ * single record in this surface is a hook, and a hook cannot be called once per
+ * row.
+ *
+ * `MemorySelection` gains `fields`, which names what each row should carry, and
+ * `MemoryRecord` gains `fields`, which is what came back. Absent asks for none
+ * and is what every caller written so far already asks for, so nothing draws
+ * anything new by accident.
+ *
+ * Optional on the row, and it had to be: a package builds a `MemoryRecord` of
+ * its own for a row that is not in the corpus — Records does, for the sheet
+ * that asks what holds on to a record — and a required member would have made
+ * every one of those a compile error over a fact it has no answer to. That
+ * would have been a major, over a member nobody had asked for. Absent rather
+ * than empty on the wire as well, so the shape a caller reads is the shape a
+ * caller may build.
+ *
+ * It is deliberately a request rather than *all of them*. A type may declare a
+ * field of several lines, and a listing of two hundred rows that drew none of
+ * it would have carried two hundred pages of prose to a column showing titles.
+ * Naming the two or three it will draw costs a caller one line and is the only
+ * version of this that stays honest as types grow.
+ *
+ * Nothing is fetched for it: the envelope already arrived whole, and the fields
+ * were being dropped on the way out. What changed is which of them are kept.
+ *
+ * An optional field added and a returned shape widened, so a minor, and every
+ * package stating `^2.0` goes on installing and behaving exactly as it did.
+ *
+ * **2.9.0** is how many conversations an order's work leaves behind, and it is
+ * on the service half of the surface rather than this one. `WorkOrder` gains
+ * `keep`, which is `"each"` or `"latest"`; absent it is `"each"`, which is what
+ * every package built so far already does.
+ *
+ * A handler on a fifteen-minute clock orders ninety-six times a day, and until
+ * now that was ninety-six conversations. A project keeps a hundred pointers, so
+ * within a day one standing instruction had pushed out every conversation its
+ * owner had held themselves. `"latest"` says *one conversation about this
+ * record at a time*, and the run that starts replaces the one before it — so
+ * the last run is always there to read and the list stays a list.
+ *
+ * It requires `about`, and requires it rather than defaulting: the slot is the
+ * record, and `"latest"` with nothing named is a package asking to keep the
+ * most recent of nothing. Two things it deliberately does not do — it does not
+ * touch a conversation somebody kept as a record, because that is a decision a
+ * person made and it outranks a package's arrangement of its own rows; and it
+ * takes the previous run away only *after* the new one has started, so an agent
+ * that will not rise leaves the last readable account standing.
+ *
+ * An optional field added, so a minor, and every package stating `^2.0` goes on
+ * installing and behaving exactly as it did.
+ *
+ * **2.8.0** is session modes, which is Plan, Accept Edits and Default on Claude
+ * Code and the equivalent wherever else an agent has them. The agents have been
+ * stating these all along, in the same `session/new` answer the model options
+ * arrive in; this build read one member of that answer and dropped the other,
+ * so the choice a person makes several times an hour had no way of reaching the
+ * window at all.
+ *
+ * `AgentSession` gains `modes` and `setMode`, and `SessionMode` and
+ * `SessionModeState` are the protocol's own shapes for them. Which mode is
+ * current is deliberately *not* among them: it is `transcript.mode`, where it
+ * already was, because two things say it — the state the agent stated and its
+ * own `current_mode_update` — and one field written twice in sequence is one
+ * answer where two fields would be two to keep in step.
+ *
+ * A conversation an extension ordered gets this as well, and gets it for free:
+ * the modes are held by the session rather than by whoever was watching when it
+ * opened, so a screen that attaches to work raised at three in the morning
+ * draws the same control as one that raised it itself.
+ *
+ * Additions only, so a minor, and every package stating `^2.0` goes on
+ * installing.
+ *
+ * **2.7.0** is who ordered a conversation, in the three places a person or a
+ * package meets one. A session an extension ordered is an ordinary session in
+ * every other respect — it is in `useLiveSessions`, it can be watched and
+ * stopped — and until now nothing told it apart from a conversation somebody
+ * started by typing.
+ *
+ * `SessionRow.source` and `RememberedConversation.source` are that, and both
+ * are needed rather than one: work ordered overnight has *finished* by the time
+ * anybody looks, so the row somebody reads in the morning is the dormant one.
+ * A source names the extension, the handler, what it was about, and **the order
+ * it came from** — because one handler may order three times, and three rows
+ * carrying the same extension and handler are three rows nothing can tell
+ * apart. That last field is also what lets a package say "task 42 is running"
+ * on its own screen, with no second call and nothing asked of any other
+ * extension.
+ *
+ * `work.order` gains a required `title`. It is required because nothing else
+ * can supply it: without one the conversation is named after the first words
+ * said, which a handler wrote *to an agent*, and a sentence written for an
+ * agent standing in for a sentence written for a list reads exactly like
+ * something a person typed. `work.order` was introduced in 2.6.0 in this same
+ * session, so no package can have been written against the shape without it.
+ *
+ * Additions to what is returned and one field on a call nothing had yet used,
+ * so a minor, and every package stating `^2.0` goes on installing.
+ *
+ * **2.6.0** is `work.agent`, and with it the only function on the service
+ * surface that changes anything: `work.order`. A handler runs for milliseconds
+ * and may order an agent that runs for hours, so it orders and Sync performs —
+ * the order is written down, a key comes back, and the handler is finished long
+ * before the agent has been raised. The capability arrives with the machinery
+ * that honours it, as `schedule` did, and it is named separately from
+ * `background` for the reason §5 gives: this is the one that spends somebody's
+ * tokens while they are asleep, and the card is where they agree to that.
+ *
+ * It is also the first capability enforced when the call is made rather than
+ * when the manifest is read. `background` and `schedule` are visible in the
+ * file; whether a handler calls `work.order` is inside the built JavaScript, and
+ * no reader of a manifest can see it. An addition, so a minor, and every package
+ * stating `^2.0` goes on installing.
+ *
+ * **2.5.0** is the service surface — `@sync-buzz/extension-api/service`, the
+ * half of the contract a handler is written against. It is an addition, so a
+ * minor, and every package stating `^2.0` goes on installing.
+ *
+ * It is the one entry in this list that the rollup below does not describe, and
+ * that is deliberate: the service surface is hand-written in the contract
+ * package rather than extracted from here, because putting it in the same
+ * declarations a UI module imports would let a window call functions that only
+ * work inside a handler's isolate. `pnpm api:check` therefore says the surface
+ * is unchanged, and the number still has to move — what a manifest states a
+ * range over is the *package*, and the package gained an export. A version that
+ * did not move would leave an author unable to say they need it.
+ *
+ * **2.4.0** is `schedule`, and it is the capability arriving with the machinery
+ * that honours it rather than before it. Until this build there was a clock in
+ * the manifest, a schema that validated it and a host that refused it: a
+ * package could say when it wanted to run and could not be installed, which is
+ * the correct half-built state — a build that publishes a capability it cannot
+ * keep is lying in the one place a person is deciding what to trust. What ships
+ * with the name is the clock itself, in the process that survives every window
+ * being closed, and the switch that stops it for one project. An addition, so a
+ * minor by the table above, and every package stating `^2.0` goes on
+ * installing.
+ *
+ * **2.3.0** is two additions and no removals, so a minor by the table above and
+ * every package stating `^2.0` goes on installing. `background` joins the
+ * capabilities: a package that ships a service module needs a build with a
+ * runtime to call it, and whether there is one is a fact about the build rather
+ * than about the manifest — which is why it is declared and refused rather than
+ * inferred. `SourceList` gains `onReorder`, and a list is rearrangeable exactly
+ * when it is given one: the window's own sections are, the settings window's
+ * two screens are not, and an extension's column decides for itself.
+ *
  * **2.2.1** changes nothing an extension can see. It exists because `pack`
  * never learned about `styles`, which entered the manifest at 2.1.0 below: the
  * first release built by that packer shipped two archives that download, hash
@@ -2403,7 +2884,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "2.2.1";
+export declare const SYNC_API_VERSION: "2.13.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
@@ -2418,7 +2899,7 @@ export declare const SYNC_API_VERSION: "2.2.1";
  * require one. Reading whether one is present is allowed too — an extension
  * that degrades deliberately is doing something better than refusing.
  */
-export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets"];
+export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets", "net", "background", "schedule", "work.agent"];
 
 export declare type SyncCapability = (typeof SYNC_CAPABILITIES)[number];
 

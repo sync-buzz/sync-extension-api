@@ -1,0 +1,225 @@
+/**
+ * What a handler may reach, and nothing else.
+ *
+ * This is the other half of `@sync-buzz/extension-api`. That one is the screen —
+ * React components, panels, hooks — and none of it means anything without a
+ * document. This one is functions over data, for the half of an extension that
+ * runs with no screen mounted: `service/index.js`, called by the clock, by an
+ * install, and later by another extension.
+ *
+ * **It is a different runtime, not a smaller one.** A handler is evaluated in
+ * QuickJS embedded in Sync — not in Node, not in a webview. There is no `fetch`,
+ * no `setTimeout`, no `TextDecoder`, no `Intl` and no `WebAssembly`. `console`
+ * is there, and what it writes is the host's to place. Everything else arrives
+ * through this surface, one function at a time and with a declared permission
+ * behind it where it needs one.
+ *
+ * **Everything answers a promise, and today nothing waits.** Every function
+ * here is settled by the time the job queue turns once, because every one of
+ * them is synchronous inside Sync. They are typed as promises anyway, so that
+ * the day one of them genuinely waits — the network is the case — no package
+ * has to be rewritten. Write `await`.
+ *
+ * The names are Sync's own: its host answers them, and it is the authority.
+ * This file is a second statement of the same list, for the same reason the
+ * manifest schema in this package is — where the two disagree, Sync is right
+ * and this is behind. Asking for a name Sync does not answer is a refusal you
+ * can catch, naming what is offered.
+ */
+
+/**
+ * A record as the engine keeps it.
+ *
+ * Deliberately open. The members of an envelope are the engine's, they differ
+ * by the type of the record, and a package may publish types of its own — so a
+ * fixed shape here would be a second vocabulary going out of date at its own
+ * rate. `sync_project` and `memory_list_types` are where the shape of a kind is
+ * answered.
+ */
+export interface Envelope {
+  readonly [member: string]: unknown;
+}
+
+/** One record as of a revision. `record` is `null` when the key is not there. */
+export interface RecordView {
+  readonly revision: string;
+  readonly record: Envelope | null;
+}
+
+/**
+ * A page of records, plus counts over everything the filters selected.
+ *
+ * `has_more` is spelled as the engine spells it. It crosses this boundary as
+ * JSON and nothing renames it on the way, so a camel-cased reading of it is
+ * `undefined` — which is the shape of bug that costs an afternoon.
+ */
+export interface Listing {
+  readonly revision: string;
+  readonly records: readonly Envelope[];
+  readonly total: number;
+  readonly limit: number;
+  readonly offset: number;
+  readonly has_more: boolean;
+  readonly counts: { readonly [member: string]: unknown };
+}
+
+/** What a record's body turned out to be, and whether there was one. */
+export interface ContentView {
+  /** `record` when the body is the record's own, `file` when it is a document. */
+  readonly source: string;
+  /** `null` when there was nothing to read. An empty string is a body somebody wrote. */
+  readonly content: string | null;
+  readonly missing: boolean;
+  /** Why it is not here, in the engine's words: `not_on_branch` or `removed`. */
+  readonly reason: string | null;
+}
+
+/**
+ * What to list, in the engine's own vocabulary.
+ *
+ * Not restated here, and that is deliberate: the schema belongs to the engine,
+ * it moves with it, and a copy in this package would be a copy to drift — the
+ * same reason Sync's MCP server hands the engine's own schemas on rather than
+ * describing them again. `memory_list_records` is where they are published.
+ */
+export interface RecordQuery {
+  readonly [field: string]: unknown;
+}
+
+/** The project's memory, as a handler is allowed to see it: reading only. */
+export declare const memory: {
+  /** One record by key. */
+  record(key: string): Promise<RecordView>;
+  /** A page of records. */
+  list(query?: RecordQuery): Promise<Listing>;
+  /** A record's body, whether it is the record's own or a document. */
+  content(key: string): Promise<ContentView>;
+};
+
+/**
+ * What to do with work a shutdown interrupted.
+ *
+ * **Yours to decide, when you order it.** A nightly poll should finish without
+ * anybody there; a conversation somebody started is theirs to pick up. The two
+ * genuinely differ and no default is right for both, so there is no default and
+ * this is required.
+ */
+export type OnInterrupted = "continue" | "wait";
+
+/**
+ * What the agent is to be asked.
+ *
+ * `text` is the message. `attachments` are **absolute paths**, and they cross to
+ * the agent as resource links rather than as bytes: Sync never opens the file,
+ * it names one, and the agent — already running in the project's own folder —
+ * opens it itself. A scheduled handler is handed its project's path, which is
+ * what an absolute path is built from.
+ *
+ * There are no images here, and that is not an omission. A handler has no
+ * clipboard and no filesystem, so there is no way for one to be holding a
+ * picture; the window's own prompt carries them.
+ */
+export interface WorkPrompt {
+  readonly text: string;
+  readonly attachments?: readonly string[];
+}
+
+/** What to order. */
+export interface WorkOrder {
+  /**
+   * What kind of work. `"agent.session"` is the only one this build performs,
+   * and a second arrives with a second executor rather than before it.
+   */
+  readonly kind: "agent.session";
+  /** Which agent to raise, as Sync names them: `claude`, `codex`, `gemini`, … */
+  readonly agent: string;
+  /**
+   * What to call the conversation, in the list a person reads.
+   *
+   * **Required, and nothing else can supply it.** Without one the title is
+   * derived from the first words said — which your handler wrote, to an agent.
+   * A sentence written *for an agent* standing in for a sentence written *for a
+   * list* reads exactly like something a person typed, which is the one thing
+   * that list must not say.
+   *
+   * A name, not a lock: somebody who does not like it can rename it.
+   */
+  readonly title: string;
+  readonly prompt: WorkPrompt;
+  readonly onInterrupted: OnInterrupted;
+  /** What the work is about, as a record key, when there is one. */
+  readonly about?: string;
+  /**
+   * How many of the conversations this order produces are kept.
+   *
+   * Absent is `"each"`, which is what every package built before this existed
+   * already does: every run is its own conversation.
+   *
+   * `"latest"` is **one conversation about this record at a time** — the run
+   * that starts replaces the one before it. A handler on a fifteen-minute clock
+   * orders ninety-six times a day, and a project keeps a hundred conversation
+   * pointers, so within a day one standing instruction has pushed out every
+   * conversation its owner held themselves. Say `"latest"` when your work is
+   * *the same thing, done again*, and `"each"` when each run is its own piece
+   * of work somebody may want to go back to.
+   *
+   * It **requires `about`**: the slot is the record, and keeping the latest of
+   * nothing is not a thing to ask for. Ordering `"latest"` without one is a
+   * refusal you can catch.
+   *
+   * Two things it does not do, and both are deliberate. It does not touch a
+   * conversation somebody kept as a record — that is a decision a person made
+   * about it, and it outranks your arrangement of your own rows. And it takes
+   * the previous run away only *after* the new one has started, so an agent
+   * that will not rise leaves the last readable account standing rather than
+   * clearing the slot and putting nothing in it.
+   */
+  readonly keep?: "each" | "latest";
+}
+
+/**
+ * Ordering work that outlives the handler that ordered it.
+ *
+ * **A handler orders; Sync performs.** Your handler runs for milliseconds and
+ * the agent it asks for may run for hours, so this answers a key as soon as the
+ * order is written down — before the agent has been raised, and long before it
+ * has finished. Nothing here waits for the work.
+ *
+ * The key names the order, not the conversation: a conversation does not exist
+ * yet when you are handed it, and may never exist if the agent will not start.
+ *
+ * **Keep it.** It comes back on every session this order produced, as
+ * `source.work` on a `SessionRow` — which is how your own screen says "task 42
+ * is running" rather than "three things are running", and how anything that
+ * offers to take somebody back to your screen knows what to open.
+ *
+ * Ordering work **spends somebody's tokens while they are asleep**, so the
+ * package's manifest has to ask for the `"work.agent"` capability and a person
+ * has to have agreed to it before installing. Without it this refuses, and the
+ * refusal is one you can catch.
+ *
+ * ```ts
+ * const key = await work.order({
+ *   kind: "agent.session",
+ *   agent: "claude",
+ *   title: "Summarising today's notes",
+ *   prompt: { text: "Read today's notes and summarise them." },
+ *   onInterrupted: "continue",
+ * })
+ * ```
+ */
+export declare const work: {
+  order(order: WorkOrder): Promise<string>;
+};
+
+/**
+ * One handler: what the host calls, and what it answers.
+ *
+ * It may be `async`, and Sync settles the promise before taking the answer. A
+ * promise nothing can settle — one awaiting a timer, of which there are none —
+ * is a refusal naming that, rather than a call that hangs.
+ */
+export type Handler = (payload: any) => unknown;
+
+/** What `register()` answers with: the handlers this package declares. */
+export type Handlers = Record<string, Handler>;

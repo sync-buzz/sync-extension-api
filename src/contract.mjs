@@ -41,6 +41,45 @@ export function manifestSchema() {
 export const RUNTIME_GLOBAL = "__syncExtensionHost__";
 
 /**
+ * The one function a handler's isolate is given, and the whole of its reach.
+ *
+ * Named here for the same reason [`RUNTIME_GLOBAL`] is: both sides name it, so
+ * it is part of the contract rather than a detail of either. It takes a
+ * function name and a JSON string and answers a JSON string, and it throws when
+ * the host refuses — which is a refusal the handler can catch.
+ */
+export const SERVICE_GLOBAL = "__syncHost__";
+
+/** Where a package's handlers are written, before the CLI builds them. */
+export const SERVICE_ENTRY = "src/service.ts";
+
+/**
+ * What `@sync-buzz/extension-api/service` binds to, and what each name calls.
+ *
+ * **Sync is the authority.** Its `handlers.rs` decides what a handler may reach
+ * and answers a catchable refusal — naming what *is* offered — for anything
+ * else. This table is a second statement of that list, exactly as the manifest
+ * schema in this package is a second statement of Sync's manifest reader: where
+ * the two disagree, Sync is right and this is behind, and that is a bug in this
+ * file rather than a difference of opinion. The cost of the drift is bounded by
+ * that refusal: an author hears a sentence naming what exists, in their own
+ * terminal, from `sync-ext check`.
+ *
+ * `wraps` is the name the single argument is given when the host is called. A
+ * `null` means the argument is the payload itself and crosses as it stands.
+ */
+export const SERVICE_SURFACE = {
+  memory: {
+    record: { calls: "memory.record", wraps: "key" },
+    list: { calls: "memory.list", wraps: null },
+    content: { calls: "memory.content", wraps: "key" },
+  },
+  work: {
+    order: { calls: "work.order", wraps: null },
+  },
+};
+
+/**
  * What this package is called, read from its own manifest.
  *
  * Read rather than written down, because it is matched against an author's
@@ -69,13 +108,60 @@ export const PACKAGE_NAME = JSON.parse(
  * tests open the archives a release ships. A field added there and not here
  * fails there, loudly, rather than in somebody's marketplace.
  */
+/**
+ * Every global a handler's isolate provides, and nothing else.
+ *
+ * Taken from a live QuickJS isolate on 2026-08-25, not written from memory. The
+ * counterpart is `ISOLATE_GLOBALS` in Sync's `sync-handlers`, and a test there
+ * compares it against a running isolate — so a newer QuickJS that adds or drops
+ * one fails in that repository, where somebody can come and update this.
+ *
+ * It is much narrower than Node or a browser, and that is the point: this list
+ * is what a service module is really written against. There is no `console`
+ * either — the host provides one over its own bridge, so it is allowed here
+ * while not being in this list.
+ */
+export const ISOLATE_GLOBALS = [
+  "AggregateError", "Array", "ArrayBuffer", "Atomics", "BigInt", "BigInt64Array",
+  "BigUint64Array", "Boolean", "DataView", "Date", "Error", "EvalError",
+  "FinalizationRegistry", "Float16Array", "Float32Array", "Float64Array", "Function",
+  "Infinity", "Int16Array", "Int32Array", "Int8Array", "InternalError", "Iterator", "JSON",
+  "Map", "Math", "NaN", "Number", "Object", "Promise", "Proxy", "RangeError",
+  "ReferenceError", "Reflect", "RegExp", "Set", "SharedArrayBuffer", "String", "Symbol",
+  "SyntaxError", "TypeError", "URIError", "Uint16Array", "Uint32Array", "Uint8Array",
+  "Uint8ClampedArray", "WeakMap", "WeakRef", "WeakSet", "decodeURI", "decodeURIComponent",
+  "encodeURI", "encodeURIComponent", "escape", "eval", "globalThis", "isFinite", "isNaN",
+  "parseFloat", "parseInt", "performance", "queueMicrotask", "undefined", "unescape",
+];
+
+/** The global a service module reaches its host through. */
+export const SERVICE_HOST_GLOBAL = "__syncHost__";
+
 export function filesOf(manifest) {
   return [
     ...(manifest.ui ? [manifest.ui] : []),
     ...(manifest.styles ? [manifest.styles] : []),
+    ...(manifest.service ? [manifest.service] : []),
     ...(manifest.types ?? []),
     ...(manifest.prompt ? [manifest.prompt] : []),
   ];
+}
+
+/**
+ * Every handler the manifest names, in the order the occasions are read.
+ *
+ * The counterpart of `Manifest::handlers` in Rust, and the same rule: there is
+ * no `handlers` list to read from, because every name arrives attached to an
+ * occasion that will call it. A second list of the same names would disagree
+ * with the first the day somebody renamed one.
+ */
+export function handlersOf(manifest) {
+  const named = [];
+  if (manifest.lifecycle?.installed) named.push(manifest.lifecycle.installed);
+  for (const scheduled of manifest.schedule ?? []) {
+    if (scheduled?.handler) named.push(scheduled.handler);
+  }
+  return named;
 }
 
 /** Reads an extension's manifest, or says which folder had none. */

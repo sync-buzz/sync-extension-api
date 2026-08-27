@@ -27,6 +27,7 @@ import { resolve } from "node:path";
 
 import { build } from "./build.mjs";
 import { check } from "./check.mjs";
+import { handlersOf } from "./contract.mjs";
 import { pack } from "./pack.mjs";
 import { registry } from "./registry.mjs";
 import { runtime } from "./contract.mjs";
@@ -119,9 +120,14 @@ try {
       }
       case "check": {
         const { manifest, problems } = await check(folder);
+        const handlers = handlersOf(manifest).length;
         const brings = [
           ...(manifest.areas ?? []).map((area) => area.label),
           ...((manifest.types ?? []).length > 0 ? [`${manifest.types.length} types`] : []),
+          // Named here because a package whose whole contribution is what it
+          // does when nobody is looking would otherwise be summarised as
+          // bringing nothing at all.
+          ...(handlers > 0 ? [`${handlers} handler${handlers === 1 ? "" : "s"}`] : []),
         ];
         // Said before the verdict rather than after it, so that a package which
         // fails a check is still listed as having been looked at. A silent id

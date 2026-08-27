@@ -54,6 +54,22 @@
       "items": { "type": "string" },
       "uniqueItems": true
     },
+    "net": {
+      "description": "Where it may reach, and the whole of what it may reach. The list is the permission: a request to anything else is refused in Rust before it leaves the machine, on the first request and on every redirect after it. Each entry is exactly one host — no scheme, no port, no path and no wildcard, because a pattern is a family of hosts nobody enumerated.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hosts": {
+          "description": "Host names, as a URL spells them.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!-)[A-Za-z0-9-]{1,63}(\\.(?!-)[A-Za-z0-9-]{1,63})*\\.(?!-)[A-Za-z-][A-Za-z0-9-]{0,62}$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
     "requires": {
       "description": "What it needs from the project rather than from the build.",
       "type": "object",
@@ -164,6 +180,41 @@
     "styles": {
       "description": "The built stylesheet, relative to the package root. The host adds it to the document when it loads the module and takes it away with it. Optional, and only meaningful beside `ui`: it holds the utility rules this package's own markup uses, which the window's stylesheet does not contain — Tailwind generates only what it finds in the window's own source, and a package is not in it. It carries no values: every colour and step in it is a `var()` the window defines, so retinting the window retints the package.",
       "$ref": "#/$defs/insidePath"
+    },
+    "service": {
+      "description": "The built service module, relative to the package root: where this package's handlers live, for what it does when no screen is mounted. Optional, and independent of `ui` — a package may have a screen and no handlers, or handlers and no screen. It is read by the host in Rust and never served to the window, so a handler is not code any document can reach.",
+      "$ref": "#/$defs/insidePath"
+    },
+    "lifecycle": {
+      "description": "Handlers called because something happened to the package itself, rather than because a clock struck or another extension asked. Each value is the name of a handler the service module returns.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "installed": {
+          "description": "Called once, when this package is installed into a project. It is synchronous and has a person in front of it, so a handler that fails here fails the install and says why.",
+          "$ref": "#/$defs/handlerName"
+        }
+      }
+    },
+    "schedule": {
+      "description": "Handlers called because a clock struck. Interval rather than cron: a syntax that can say `at 03:00 on weekdays` buys a timezone question and a missed-while-asleep question, and nothing here needs either. Lateness is not made up for — a machine asleep for six hours runs a handler once when it wakes, not six times.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["handler", "description", "every"],
+        "properties": {
+          "handler": { "$ref": "#/$defs/handlerName" },
+          "description": {
+            "description": "What this handler does, in your own words, for the page somebody decides from. Required, because the handler's own name is not shown and `every` says only how often: without this the page can say `runs every 6h` and not what it runs. The host writes the cadence beside your sentence and never takes it from here, so the two cannot disagree.",
+            "type": "string",
+            "minLength": 1,
+            "$comment": "Whitespace is not a sentence, and the host refuses one. A check that accepts what the host will refuse is the failure this repository already paid for once, in the other direction.",
+            "pattern": "^\\S(.*\\S)?$"
+          },
+          "every": { "$ref": "#/$defs/interval" }
+        }
+      }
     }
   },
   "allOf": [
@@ -179,9 +230,85 @@
       "$comment": "A stylesheet with no module to style is a file nobody asked for: styles are the markup's, and the markup is in the module.",
       "if": { "required": ["styles"] },
       "then": { "required": ["ui"] }
+    },
+    {
+      "$comment": "An occasion with nothing to call is an intention rather than a capability, and the install would be the first thing to find out.",
+      "if": { "required": ["lifecycle"] },
+      "then": { "required": ["service"] }
+    },
+    {
+      "$comment": "Running code with no screen is something a person agrees to before the package is installed, and the card is where they agree to it. A package that ships handlers and asks for nothing would be running code that was never on the card.",
+      "if": { "required": ["service"] },
+      "then": {
+        "required": ["capabilities"],
+        "properties": {
+          "capabilities": { "contains": { "const": "background" } }
+        }
+      }
+    },
+    {
+      "$comment": "The same rule as for `lifecycle`, one occasion over: a package that says when to call a handler and ships nothing to call it in has declared an intention rather than a capability.",
+      "if": {
+        "properties": { "schedule": { "type": "array", "minItems": 1 } },
+        "required": ["schedule"]
+      },
+      "then": { "required": ["service"] }
+    },
+    {
+      "$comment": "A second capability rather than a wider reading of the first. `background` is agreeing that this package runs code; `schedule` is agreeing that it runs it while nobody is there. A person shown only the first agreed to the narrower of two different things.",
+      "if": {
+        "properties": { "schedule": { "type": "array", "minItems": 1 } },
+        "required": ["schedule"]
+      },
+      "then": {
+        "required": ["capabilities"],
+        "properties": {
+          "capabilities": { "contains": { "const": "schedule" } }
+        }
+      }
+    },
+    {
+      "$comment": "The same rule as `background`, one permission over: reading something nobody in this window wrote is something a person agrees to before the package is installed, and the card is where they agree to it.",
+      "if": {
+        "properties": { "net": { "properties": { "hosts": { "type": "array", "minItems": 1 } }, "required": ["hosts"] } },
+        "required": ["net"]
+      },
+      "then": {
+        "required": ["capabilities"],
+        "properties": {
+          "capabilities": { "contains": { "const": "net" } }
+        }
+      }
+    },
+    {
+      "$comment": "And the direction the other capabilities cannot be wrong in. A service module is in the package whether or not it was declared, so `background` can only be missing; a host list is the permission itself, so a package can also ask for the network and name nowhere to reach — a permission with no extent, and an agreement somebody made for nothing.",
+      "if": {
+        "properties": { "capabilities": { "contains": { "const": "net" } } },
+        "required": ["capabilities"]
+      },
+      "then": {
+        "required": ["net"],
+        "properties": {
+          "net": {
+            "required": ["hosts"],
+            "properties": { "hosts": { "type": "array", "minItems": 1 } }
+          }
+        }
+      }
     }
   ],
   "$defs": {
+    "handlerName": {
+      "description": "The name of a handler the service module returns. Not prefixed with the extension id, unlike a kind: a kind goes into a corpus everybody shares, while a handler's name is only ever read beside the package that declared it.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S(.*\\S)?$"
+    },
+    "interval": {
+      "description": "How often a handler runs: a count and a unit, like `30m`, `6h` or `1d`. Minutes, hours or days, and deliberately no seconds — the unit set is the floor, so the shortest interval anybody can express is one minute and there is no separate minimum to state and then disagree with. A leading zero is refused rather than normalised, so `1h` has one spelling.",
+      "type": "string",
+      "pattern": "^[1-9][0-9]*[mhd]$"
+    },
     "insidePath": {
       "description": "A path that stays inside the package: relative, no backslashes, no segment that is empty, `.` or `..`. A path that climbs reads a file the archive does not contain.",
       "type": "string",

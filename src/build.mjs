@@ -38,7 +38,16 @@ import { build as esbuild, context } from "esbuild";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
-import { PACKAGE_NAME, RUNTIME_GLOBAL, manifestOf, root, runtime } from "./contract.mjs";
+import {
+  PACKAGE_NAME,
+  RUNTIME_GLOBAL,
+  SERVICE_ENTRY,
+  SERVICE_GLOBAL,
+  SERVICE_SURFACE,
+  manifestOf,
+  root,
+  runtime,
+} from "./contract.mjs";
 import { styles } from "./styles.mjs";
 
 const require = createRequire(import.meta.url);
@@ -96,12 +105,111 @@ function hostRuntime(values) {
 }
 
 /**
+ * The service surface, as calls on the one function the isolate is given.
+ *
+ * Written out rather than bundled from a real module, for the reason the UI
+ * shim is: the names then cannot drift from the contract, because they *are*
+ * the contract — [`SERVICE_SURFACE`] is the same table the declarations
+ * describe.
+ *
+ * Every member is `async`, which is not decoration. The host answers
+ * synchronously today, so the promise settles on the first turn of the job
+ * queue and nothing waits — but a refusal from the host arrives as a rejection
+ * rather than as a synchronous throw, which is the same thing an author will
+ * catch on the day one of these genuinely waits. Write `await`.
+ */
+function serviceShim() {
+  const lines = [
+    `const host = globalThis.${SERVICE_GLOBAL};`,
+    `if (host === undefined) {`,
+    `  throw new Error("This module was loaded outside Sync, or outside a handler's isolate.");`,
+    `}`,
+    `const call = async (name, argument) => JSON.parse(host(name, JSON.stringify(argument ?? {})));`,
+  ];
+  for (const [member, functions] of Object.entries(SERVICE_SURFACE)) {
+    const entries = Object.entries(functions).map(([name, { calls, wraps }]) => {
+      const argument = wraps === null ? "given" : `{ ${wraps}: given }`;
+      return `  ${name}: (given) => call(${JSON.stringify(calls)}, ${argument}),`;
+    });
+    lines.push(`export const ${member} = {`, ...entries, `};`);
+  }
+  return lines.join("\n");
+}
+
+/** Replaces the one import a service module may make. */
+function serviceRuntime() {
+  const subpath = `${PACKAGE_NAME}/service`;
+  return {
+    name: "sync-service-surface",
+    setup(builder) {
+      const injected = new RegExp(
+        `^${subpath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+      );
+      builder.onResolve({ filter: injected }, (argument) => ({
+        path: argument.path,
+        namespace: "sync-service",
+      }));
+      builder.onLoad({ filter: /.*/, namespace: "sync-service" }, () => ({
+        contents: serviceShim(),
+        loader: "js",
+      }));
+    },
+  };
+}
+
+/**
+ * Builds a package's handlers, when it has any.
+ *
+ * A second build rather than a second entry point of the first, because the two
+ * are different runtimes and nothing about them lines up: no React, no JSX, no
+ * stylesheet, no DOM, and a target chosen for an isolate rather than for
+ * Safari. `platform: "neutral"` is what says so — it stops esbuild reaching for
+ * a Node or a browser shim for anything, which in this isolate would be a
+ * module that resolves at build time and throws at three in the morning.
+ *
+ * `es2020` is the floor rather than a guess: `async`, `await`, optional
+ * chaining and nullish coalescing are what an author writing a handler
+ * actually uses, and every one of them is in it.
+ */
+async function buildService(folder, manifest, { watch }) {
+  const options = {
+    entryPoints: [join(folder, SERVICE_ENTRY)],
+    outfile: join(folder, manifest.service),
+    bundle: true,
+    format: "esm",
+    target: "es2020",
+    platform: "neutral",
+    logLevel: "info",
+    minify: !watch,
+    sourcemap: false,
+    plugins: [serviceRuntime()],
+  };
+  if (watch) {
+    const watcher = await context(options);
+    await watcher.watch();
+    return;
+  }
+  await esbuild(options);
+}
+
+/**
  * @param folder The extension's own directory, holding `manifest.json`.
- * @returns What was built, or `null` for a package that ships no module.
+ * @returns What was built, or `null` for a package that ships neither module.
+ *
+ * **Two modules, either or both.** A package may have a screen and no handlers,
+ * handlers and no screen, or both — `docs/background.md` §3.1 — so what is
+ * built is what the manifest declares. The service module used to be built by
+ * nothing at all, which made §3.2's promise that "the same CLI builds it"
+ * false: handlers were written as JavaScript by hand, against a bare global.
  */
 export async function build(folder, { watch = false } = {}) {
   const manifest = manifestOf(folder);
-  if (manifest.ui === undefined) return null;
+  if (manifest.service !== undefined) await buildService(folder, manifest, { watch });
+  if (manifest.ui === undefined) {
+    return manifest.service === undefined
+      ? null
+      : { watching: watch, version: runtime().version, styles: null };
+  }
 
   const contract = runtime();
   const options = {
