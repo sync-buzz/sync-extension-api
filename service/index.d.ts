@@ -14,11 +14,11 @@
  * through this surface, one function at a time and with a declared permission
  * behind it where it needs one.
  *
- * **Everything answers a promise, and today nothing waits.** Every function
- * here is settled by the time the job queue turns once, because every one of
- * them is synchronous inside Sync. They are typed as promises anyway, so that
- * the day one of them genuinely waits — the network is the case — no package
- * has to be rewritten. Write `await`.
+ * **Everything answers a promise, and one of them waits.** `net.fetch` sits
+ * until the other end answers or the door's timeout stops it; the rest settle
+ * by the time the job queue turns once, because they are synchronous inside
+ * Sync. All of them are typed as promises regardless, so a member that comes to
+ * wait later breaks nothing. Write `await`.
  *
  * The names are Sync's own: its host answers them, and it is the authority.
  * This file is a second statement of the same list, for the same reason the
@@ -119,6 +119,21 @@ export type OnInterrupted = "continue" | "wait";
  * clipboard and no filesystem, so there is no way for one to be holding a
  * picture; the window's own prompt carries them.
  */
+/**
+ * The record a piece of work is about, as a heading can draw it.
+ *
+ * Three members and each is load-bearing: the key is what the list groups by
+ * and what names the slot `keep: "latest"` replaces in, the kind is what
+ * opening the record takes beside it, and the title is what the heading says.
+ * The title is a snapshot — what the record was called when the work was
+ * ordered — so a heading is drawn without reading the corpus for every row.
+ */
+export interface WorkAbout {
+  readonly key: string;
+  readonly kind: string;
+  readonly title: string;
+}
+
 export interface WorkPrompt {
   readonly text: string;
   readonly attachments?: readonly string[];
@@ -147,8 +162,20 @@ export interface WorkOrder {
   readonly title: string;
   readonly prompt: WorkPrompt;
   readonly onInterrupted: OnInterrupted;
-  /** What the work is about, as a record key, when there is one. */
-  readonly about?: string;
+  /**
+   * What the work is about, when it is about a record.
+   *
+   * Name it in full where you can. Chat groups its list by this, and a heading
+   * is a name rather than an address: a key alone says which slot the work
+   * belongs to and nothing a person can read or open, so a conversation ordered
+   * with one carries no heading and sits with the ones about nothing in
+   * particular. The kind travels with the key because opening a record takes
+   * both — which section shows one is decided by its type.
+   *
+   * The bare key is the older spelling and is still accepted, so a handler
+   * written before this goes on working unchanged.
+   */
+  readonly about?: string | WorkAbout;
   /**
    * How many of the conversations this order produces are kept.
    *
@@ -210,6 +237,119 @@ export interface WorkOrder {
  */
 export declare const work: {
   order(order: WorkOrder): Promise<string>;
+};
+
+/**
+ * The package's own secrets, in its own namespace.
+ *
+ * **Behind the `"vault"` capability**, which a person is shown on the card
+ * before they install anything. Reading and writing are one agreement rather
+ * than two, because the flow that needs either needs both: a package that signs
+ * somebody in ends up holding a token nobody could have typed, and refreshes it
+ * before it expires.
+ *
+ * The namespace is yours and there is nothing to pass that would leave it. You
+ * supply a name; the owner is the id Sync resolved your package under, joined
+ * on Sync's side. A name that looks like a way out — a path, another package's
+ * id — is a name, and what it addresses is an oddly-named entry of your own.
+ *
+ * **Do not hand a value to an agent.** Not through a tool that returns it, not
+ * in text you write into a record, not in a prompt. Sync does not build that
+ * door and this is the reason it does not: the way to let an agent act on a
+ * secret is to offer it a tool that *does the work* — signs the request, calls
+ * the API — and answers with the result. You can write the other thing; the
+ * recommendation against it is here so that writing it is a decision.
+ *
+ * **The safer path is to never hold one.** `net.secrets` in your manifest names
+ * an entry and the host puts it into a header your handler never sees. Use this
+ * when the secret goes somewhere a header cannot take it — a signature, an
+ * assertion, an exchange — or when you have just been handed one to store.
+ *
+ * A value read here is kept out of the host's log for the length of the call,
+ * so a `console.log` that would have printed it prints that something was taken
+ * out instead. That is one accident closed, not secrecy from your own code.
+ */
+export declare const vault: {
+  /** The secret stored under that name. Rejects when there is none. */
+  read(name: string): Promise<string>;
+  /** Store one, or replace what is there. */
+  write(name: string, secret: string): Promise<void>;
+  /** Take one out. Signing somebody out is something a package can finish. */
+  forget(name: string): Promise<void>;
+};
+
+/** The verbs a request may use. Anything past `GET` needs `"net.write"`. */
+export type Method = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+/**
+ * One request, as your package states it.
+ *
+ * `fetch`'s vocabulary narrowed to what crosses into Sync, and **unknown
+ * members are refused rather than dropped**: `signal`, `credentials`, `mode`,
+ * `cache` and `redirect` are not here, and asking for one is a sentence you can
+ * act on rather than a setting you believe you made.
+ *
+ * Headers are a map rather than a list of pairs — a package sending one name
+ * twice is saying something confused, and this makes it unsayable.
+ */
+export interface NetRequest {
+  readonly url: string;
+  /** `GET` when you do not say, which is what `fetch` does. */
+  readonly method?: Method;
+  readonly headers?: { readonly [name: string]: string };
+  readonly body?: string;
+}
+
+/**
+ * What came back.
+ *
+ * A `404` is an answer to a question you asked and it arrives as one: the door
+ * does not turn a status into a failure, because *that repository has no
+ * issues* reads nothing like *the network is down*. What rejects is a request
+ * that could not be made or was not allowed.
+ *
+ * No `statusText`: HTTP/2 carries no reason phrase, so it would be a member
+ * that is sometimes there — worse than one that never is.
+ */
+export interface NetResponse {
+  /**
+   * Where the response actually came from, after any redirect.
+   *
+   * Build your next request from this rather than from what you asked for, or
+   * you will keep being redirected.
+   */
+  readonly url: string;
+  readonly status: number;
+  /** Whether the status is one of the successful ones, as `fetch` derives it. */
+  readonly ok: boolean;
+  /** Names in lower case; a name the server repeated arrives joined by `, `. */
+  readonly headers: { readonly [name: string]: string };
+  readonly body: string;
+}
+
+/**
+ * Reaching a host your manifest named.
+ *
+ * **Behind the `"net"` capability, and the hosts you listed are the whole of
+ * what you may reach.** The list is checked in Rust before anything leaves the
+ * machine and again on every redirect, so a host you did not name is a
+ * rejection rather than a request. A verb that changes something there —
+ * anything past `GET` and `HEAD` — needs `"net.write"` as well: reading
+ * somebody's tracker and filing in it are two different agreements.
+ *
+ * **This one genuinely waits.** Everything else on this surface settles on the
+ * first turn of the job queue; this sits until the answer arrives or the door's
+ * own timeout stops it, and the wait is not charged against the handler's time
+ * limit. Write `await` and expect it to mean something.
+ *
+ * ```ts
+ * const answer = await net.fetch({ url: "https://api.example.com/things" })
+ * if (!answer.ok) throw new Error(`the API said ${answer.status}`)
+ * const things = JSON.parse(answer.body)
+ * ```
+ */
+export declare const net: {
+  fetch(request: NetRequest): Promise<NetResponse>;
 };
 
 /**

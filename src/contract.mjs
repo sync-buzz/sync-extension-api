@@ -65,19 +65,67 @@ export const SERVICE_ENTRY = "src/service.ts";
  * that refusal: an author hears a sentence naming what exists, in their own
  * terminal, from `sync-ext check`.
  *
- * `wraps` is the name the single argument is given when the host is called. A
- * `null` means the argument is the payload itself and crosses as it stands.
+ * `takes` names the arguments the member is written with, in order, and they
+ * become the members of the object the host is called with. A `null` means the
+ * member takes the payload itself and it crosses as it stands.
  */
 export const SERVICE_SURFACE = {
   memory: {
-    record: { calls: "memory.record", wraps: "key" },
-    list: { calls: "memory.list", wraps: null },
-    content: { calls: "memory.content", wraps: "key" },
+    record: { calls: "memory.record", takes: ["key"] },
+    list: { calls: "memory.list", takes: null },
+    content: { calls: "memory.content", takes: ["key"] },
   },
   work: {
-    order: { calls: "work.order", wraps: null },
+    order: { calls: "work.order", takes: null },
+  },
+  vault: {
+    read: { calls: "vault.read", takes: ["name"] },
+    write: { calls: "vault.write", takes: ["name", "secret"] },
+    forget: { calls: "vault.forget", takes: ["name"] },
+  },
+  net: {
+    fetch: { calls: "net.fetch", takes: null },
   },
 };
+
+/**
+ * What a package must ask for before a handler of it may open one of the doors
+ * that leaves the machine.
+ *
+ * Sync's `handlers.rs` is the authority for every one of these and this is a
+ * second statement of the names, on the same terms as the rest of this package:
+ * where the two disagree Sync is right and this is behind.
+ *
+ * Each is checked by looking for the call in the built module, so each entry is
+ * a capability and the calls that need it. `net.write` is deliberately not
+ * here: which verb a request uses is computed, so a scan would pass the package
+ * that builds its method from a variable — and a check that catches one of two
+ * spellings is worse than none, because it is read as a check.
+ */
+export const SERVICE_CAPABILITIES = [
+  {
+    capability: "work.agent",
+    calls: [SERVICE_SURFACE.work.order.calls],
+    because:
+      "Ordering work spends somebody's tokens while they are asleep, and the card they install from has to say so.",
+  },
+  {
+    capability: "vault",
+    calls: [
+      SERVICE_SURFACE.vault.read.calls,
+      SERVICE_SURFACE.vault.write.calls,
+      SERVICE_SURFACE.vault.forget.calls,
+    ],
+    because:
+      "Holding somebody's secrets is something they agree to on the card, before anything of yours runs.",
+  },
+  {
+    capability: "net",
+    calls: [SERVICE_SURFACE.net.fetch.calls],
+    because:
+      "The hosts your manifest names are the whole of what you may reach, and a manifest that names none reaches nowhere.",
+  },
+];
 
 /**
  * What this package is called, read from its own manifest.
@@ -160,6 +208,13 @@ export function handlersOf(manifest) {
   if (manifest.lifecycle?.installed) named.push(manifest.lifecycle.installed);
   for (const scheduled of manifest.schedule ?? []) {
     if (scheduled?.handler) named.push(scheduled.handler);
+  }
+  // The third occasion, and the one whose caller is not the application: an
+  // agent says the name. Left out of this list, a tool's handler reads as a
+  // function nothing calls — which is what `check` says about it, in the one
+  // place an author would believe it.
+  for (const tool of manifest.tools ?? []) {
+    if (tool?.handler) named.push(tool.handler);
   }
   return named;
 }

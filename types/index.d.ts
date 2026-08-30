@@ -247,9 +247,9 @@ export declare const ATTENTION_STATES: readonly ["stale", "invalid"];
  * mark that means none is a mark that means nothing.
  *
  * **Reporting nothing is not a report.** The declared count goes on showing
- * through it, which is what lets a section have both: Chat declares how many
- * conversations there are, so the row says so before a line of Chat has run and
- * goes on saying so while nobody is talking to an agent. What the area reports
+ * through it, which is what lets a section have both: a section that declares a
+ * count over the corpus has its row saying so before a line of its code has run
+ * and going on saying so while nothing is happening. What the area reports
  * takes over only while there is something it alone could know — a reply that
  * arrived while somebody was in another section, which is nowhere in the corpus
  * and cannot be counted from it. Composing the two is the area's own business:
@@ -653,6 +653,26 @@ export declare type Entry =
     readonly voice: "thought";
     readonly text: string;
 }
+/**
+* A picture the agent answered with.
+*
+* Its own block rather than something hung off the message beside it, and for
+* the same reason a tool call is: the agent went and made something, and the
+* text before it and the text after it are two different things to say. It
+* also has to fold identically live and on a replay — an agent sends the
+* picture in the same run of chunks either way — and a block that joined the
+* open message would put it in a different place depending on how fast the
+* chunk before it arrived.
+*/
+| {
+    readonly id: string;
+    readonly at: number;
+    readonly voice: "picture";
+    /** What the session holds the bytes under, or `null` when it could not. */
+    readonly imageId: string | null;
+    readonly mimeType: string;
+    readonly bytes: number;
+}
 /** A tool the agent ran. */
 | {
     readonly id: string;
@@ -723,38 +743,93 @@ export declare function explain(failure: unknown): string;
  * extension stating its own. It is handed over instead, already attributed —
  * the package holds what it was given, and there is nothing to hold for a
  * package whose manifest asked for nothing.
+ *
+ * `vault` is the same shape again and the reason is sharper: an id in the
+ * argument list would be one package spelling another's namespace, which is the
+ * whole of what a namespace is for.
  */
 export declare interface ExtensionHost {
     readonly id: string;
     readonly net: ExtensionNet;
+    readonly vault: ExtensionVault;
 }
 
 /**
  * The one door out of this window, for the one package that declared it.
- *
- * **It reads, and there is nothing here that writes.** No method, no body, no
- * header: a URL, and what comes back. A header is where a token goes and a body
- * is where an instruction goes, and a package installed to read something needs
- * neither — when one of them has a reason, it arrives as a decision rather than
- * as a field that was already on the surface.
  *
  * Where it may reach is `net.hosts` in the package's own manifest, and the
  * check is Rust's: the window's `connect-src` does not name the outside at all,
  * so this is not a restraint on a package that could otherwise fetch — there is
  * no reach here to take away. Every redirect is checked again, so a hop off the
  * declared list is refused as firmly as the first request.
+ *
+ * **Reading and changing something are two agreements.** `net` is the first and
+ * `net.write` is the second, and a package that asked only for the first is
+ * refused — in words, at the call — the moment it uses a method that is not
+ * `GET` or `HEAD`. The division is the protocol's: those two are defined as
+ * safe, and a verb that is merely usually harmless is not something a person
+ * can be asked to agree to.
+ *
+ * **Nothing is retried.** A request that timed out may have been performed, and
+ * whether to send it again is a question only the package can answer.
  */
 export declare interface ExtensionNet {
     /**
-     * Reads one URL, or rejects saying why it did not.
+     * Makes one request, or rejects saying why it did not.
      *
      * A `404` is not a rejection: it is an answer to the question the package
      * asked, and it comes back as a status for the package to explain. What
      * rejects is a request that never happened — a host the manifest does not
-     * name, a scheme that is not `https`, an answer too large to read, or no
-     * network at all.
+     * name, a scheme that is not `https`, a verb the package did not ask to be
+     * allowed, a response too large to read, or no network at all.
      */
-    read(url: string): Promise<NetAnswer>;
+    fetch(request: NetRequest): Promise<NetResponse>;
+}
+
+/**
+ * The secrets this package keeps, and nobody else's.
+ *
+ * One namespace, and it is the package's own: the owner half of every entry is
+ * the id resolved against what is installed on this machine, and a call says
+ * only what it calls its own secret. A name that reads like a way out of the
+ * namespace — a path, another package's id — is a name, and the entry it
+ * addresses is still this package's.
+ *
+ * It reads and writes, because the flow that needs one needs the other: a
+ * package that signs somebody in ends up holding a token nobody could have
+ * typed, and the same package replaces it when it expires. It forgets too, so
+ * that signing out is something the code can finish rather than a tidy-up left
+ * to a person in the settings window.
+ *
+ * **A secret is never handed to an agent — not the value, not by any route.**
+ * Not in a prompt, not in the environment a process is raised with, not as a
+ * tool that answers with it. What an agent is given is a *method that does the
+ * work*: sign this request, fetch this page, post this comment. The password
+ * does the work and stays here; the agent gets the outcome.
+ *
+ * Sync does not check this and cannot. A value that has crossed into a
+ * package's own JavaScript is that package's to pass on, and the call that
+ * would pass it on is invisible to anything that reads a manifest — the same
+ * reason `work.agent` is refused when it is called rather than when the file is
+ * parsed. So this is a rule stated where its author reads it, and a check that
+ * pretended to close it would be worse than saying so: an agent's transcript is
+ * kept, read back, and sent to a model again, and a token that reaches one has
+ * been published rather than leaked.
+ */
+export declare interface ExtensionVault {
+    /**
+     * Reads one of this package's secrets, or rejects saying why it did not.
+     *
+     * What rejects is nothing stored under that name, a store this machine will
+     * not open, and a system asking somebody for permission that nobody answered.
+     * The last one is a refusal in words rather than a wait, which is what makes
+     * this callable by code running while its owner is asleep.
+     */
+    read(name: string): Promise<string>;
+    /** Puts a secret in this package's namespace, or replaces the one there. */
+    write(name: string, secret: string): Promise<void>;
+    /** Takes one of this package's secrets out. */
+    forget(name: string): Promise<void>;
 }
 
 /**
@@ -927,6 +1002,17 @@ export declare type Freshness = "fresh" | "unverified" | "stale" | "invalid" | (
 /** The states the engine reports, in the order they are worth reading. */
 export declare const FRESHNESS_STATES: readonly ["fresh", "unverified", "stale", "invalid"];
 
+/**
+ * A file name for a picture that has none, from what it is.
+ *
+ * A conversation's pictures are not files and have no names — the one the agent
+ * sent never had one, and every browser invents the same name for a pasted one.
+ * So the panel is given something to start from rather than an empty field, and
+ * the extension is taken from the media type because saving a PNG as `.jpg` is
+ * a file that will not open where it lands.
+ */
+export declare function imageFileName(mimeType: string, called?: string): string;
+
 /** One extension a project depends on, by identifier and version. */
 export declare interface InstalledExtension {
     readonly id: string;
@@ -966,6 +1052,17 @@ export declare interface InstalledExtension {
      * belongs to one machine, and in a shared record it is noise at best.
      */
     readonly source?: string;
+    /**
+     * What this extension offers an agent to call, as it declared them.
+     *
+     * Here for the reason `prompt` is: the server an agent reaches is a process
+     * of its own with no view of the catalogue, so a declaration that stayed in
+     * the window would be one only the window could read. Written on install and
+     * rewritten whenever this build's declarations and the stored ones disagree.
+     *
+     * Absent for an extension that offers none, which is most of them.
+     */
+    readonly tools?: readonly ToolDeclaration[];
 }
 
 /**
@@ -1323,7 +1420,7 @@ export declare interface MemorySelection {
 }
 
 /**
- * A type the project holds, as the Records column lists it.
+ * A type the project holds, as the column that lists them shows it.
  *
  * All of it comes from the project's own corpus, the mark included: a type
  * created in the window is one no build has heard of. Where a definition names
@@ -1405,7 +1502,7 @@ export declare interface MemoryType {
 }
 
 /**
- * The Records column's payload.
+ * What a column listing the project's own types is given.
  *
  * The counts describe the whole corpus and the records describe the current
  * selection, because the navigator lists every type while the workspace shows
@@ -1504,20 +1601,77 @@ export declare interface NativeMenuItem {
  * ```
  */
 /**
+ * What a request asks the other end to do.
+ *
+ * The protocol's own spelling, because that is what an author is reading in
+ * somebody else's API documentation while they write this. A union rather than
+ * a string: a verb this door cannot honour is a mistake the editor catches, and
+ * the same list is checked again in Rust for a caller the editor never saw.
+ */
+export declare type NetMethod = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+/**
+ * One request, as the package states it.
+ *
+ * `fetch`'s vocabulary — `method`, `headers`, `body` — narrowed to what crosses
+ * a process boundary, and stated as one object rather than a URL and an init.
+ * That is the shape that actually crosses: the same members are read in Rust,
+ * so there is one spelling of a request rather than one per surface, and
+ * `method` sits beside `url` where a reader looks for it.
+ *
+ * **A member that is not here is refused rather than ignored.** An author will
+ * reach for the parts of `fetch` this does not have — `signal`, `credentials`,
+ * `redirect`, `mode` — and a member quietly dropped is a timeout somebody
+ * believes they set. What comes back instead is a sentence naming it.
+ */
+export declare interface NetRequest {
+    readonly url: string;
+    /** `GET` when it is not said, as `fetch` reads it. */
+    readonly method?: NetMethod;
+    /**
+     * Header names and values, as the package writes them.
+     *
+     * The four the transport writes for itself — `host`, `content-length`,
+     * `connection`, `transfer-encoding` — are refused: a request that set its own
+     * would disagree with itself, and the server would answer about something
+     * else entirely.
+     */
+    readonly headers?: Readonly<Record<string, string>>;
+    /** What is sent, for a method that carries one. Text, and at most 2 MB. */
+    readonly body?: string;
+}
+
+/**
  * What came back from a host an extension declared, as it reads it.
  *
- * The status and the body, and nothing else. A package that can see the status
- * tells *this repository has no issues* apart from *this is asking for a
- * token*, which is the difference a person needs said; headers are the rest of
- * an HTTP conversation, and a surface that carried one would be a surface that
- * has to keep in step with a protocol.
+ * `fetch`'s vocabulary again, and every member is one a package cannot work
+ * without. `status` and `ok` are the same fact at two widths — almost every
+ * caller wants the second, and the one that does not needs the first exactly.
+ * `headers` are where pagination and rate limits live, and a package polling
+ * somebody else's tracker without `link` or `retry-after` either stops at the
+ * first page or gets itself blocked.
+ *
+ * No `statusText`: HTTP/2 carries no reason phrase, so it would be a member
+ * that is sometimes there — which is worse than one that never is.
  *
  * The body is text. What it means is the package's business — every API it
  * could have been installed to read has its own shape, and a host that parsed
  * one would be the window having an opinion about somebody else's JSON.
  */
-export declare interface NetAnswer {
+export declare interface NetResponse {
+    /**
+     * Where the response came from, after any redirect.
+     *
+     * Not the URL that was asked for. A package that followed a redirect and then
+     * builds its next request from the address it started at will keep being
+     * redirected.
+     */
+    readonly url: string;
     readonly status: number;
+    /** Whether the status is a successful one, as `fetch` derives it. */
+    readonly ok: boolean;
+    /** Names in lower case; a name the server repeated is joined with `, `. */
+    readonly headers: Readonly<Record<string, string>>;
     readonly body: string;
 }
 
@@ -1969,6 +2123,14 @@ export declare interface RememberedConversation {
      * the live one.
      */
     readonly source?: SessionSource;
+    /**
+     * The record the conversation was held under, when it was held under one.
+     *
+     * Carried here for the reason `source` is: a dormant row and a live one are
+     * the same conversation at two moments, and one that lost its heading when
+     * its agent stopped would move up the list under somebody reading it.
+     */
+    readonly about?: SessionAbout;
     /** The record it was kept as, when somebody kept it on this machine. */
     readonly recordKey?: string;
 }
@@ -2016,6 +2178,28 @@ export declare function renameSession(key: string, title: string): Promise<void>
  * continue from a kept transcript instead of from the agent.
  */
 export declare function resumeSession(project: string, acpSession: string): Promise<OpenedSession>;
+
+/**
+ * Save one of a conversation's pictures to a file, with the system's panel.
+ *
+ * It exists because the webview's own image menu does not work here and cannot
+ * be made to. `Save Image` and `Open Image in New Window` are drawn by WebKit
+ * on any `img`, and both are dead in this window: the source is a `data:` URL,
+ * saving one needs a download handler the shell does not install, and opening
+ * one is a navigation the content security policy refuses. Two menu items that
+ * look like the system offering something and then do nothing are worse than no
+ * menu at all, so the picture is given a menu of ours — native, like every
+ * other context menu here — and this is what its one command calls.
+ *
+ * The bytes never come back through the window. It has them as base64 to draw
+ * with, and writing a file from that would mean decoding what was encoded for a
+ * different purpose; the panel answers with a path and Rust writes the bytes it
+ * already holds.
+ *
+ * Answers whether a file was written: `false` is the person having dismissed
+ * the panel, which is not a failure and is not reported as one.
+ */
+export declare function saveSessionImage(key: string, id: string, suggestedName: string): Promise<boolean>;
 
 /**
  * Where the open record stands with the store.
@@ -2106,6 +2290,47 @@ export declare function ScrollArea({ className, children, viewportRef, ...props 
 }): React_2.JSX.Element;
 
 export declare function ScrollBar({ className, orientation, ...props }: React_2.ComponentProps<typeof ScrollArea_2.ScrollAreaScrollbar>): React_2.JSX.Element;
+
+/**
+ * A picture the agent sent, as it survives in the transcript.
+ *
+ * What is left where the base64 was. The host takes an image block's bytes out
+ * of the update before it records it — a session's history is replayed whole to
+ * every screen that comes back to the conversation, and a picture left in it
+ * would be paid for on every one of them — and puts them in the session under
+ * `imageId`, which {@link sessionImage} fetches by.
+ *
+ * `imageId` is `null` when the conversation could not keep it: there is one
+ * ceiling on what a conversation holds in pictures, and what was pasted into it
+ * counts against the same one. The block stays either way, because a turn that
+ * lost its picture entirely is a turn in which the agent answered with nothing.
+ */
+export declare interface SentImage {
+    readonly imageId: string | null;
+    readonly mimeType: string;
+    /** How many bytes it was, whether or not it is held. */
+    readonly bytes: number;
+}
+
+/**
+ * The record a conversation is being held under.
+ *
+ * Three members and each is load-bearing: the key is what a list groups by, the
+ * kind is what opening the record takes beside it — an area lists records by
+ * type and cannot find out which of its own lists a key belongs in without
+ * reading the record first — and the title is what a heading says.
+ *
+ * The title is what the record was called when the work began, so a heading is
+ * drawn without reading the corpus for every row of a list that is polled every
+ * few seconds. It goes stale the way `extensionName` does, and in the same
+ * direction: a record renamed later is called what it was called here until
+ * something is opened about it again.
+ */
+export declare interface SessionAbout {
+    readonly key: string;
+    readonly kind: string;
+    readonly title: string;
+}
 
 /**
  * Everything a session has said so far, read once and not watched.
@@ -2296,6 +2521,20 @@ export declare interface SessionRow {
      * deliberately — a list already answers it.
      */
     readonly source?: SessionSource;
+    /**
+     * The record this conversation is being held under, when there is one.
+     *
+     * Beside `source` rather than inside it, because *who asked* and *what it is
+     * about* are two questions and only the first of them has a person as an
+     * ordinary answer. A conversation somebody opened from a task has no orderer
+     * and is still about that task, so a list that grouped by who asked would
+     * leave every one of those in the same undifferentiated heap.
+     *
+     * Set when the session is opened and never edited, which is what lets a list
+     * group by it: a row that changed group while somebody was reading it was the
+     * mistake a `Running`/`Not running` split already made once.
+     */
+    readonly about?: SessionAbout;
 }
 
 /**
@@ -2446,12 +2685,16 @@ export declare interface SourceListItem {
     readonly label: string;
     readonly icon: LucideIcon;
     /**
-     * A word about the row itself, trailing and muted. Not a count and not a
-     * state of what the row holds — those belong to whatever the row is about.
+     * What the row is for, in a sentence, shown under the pointer and nowhere
+     * else. Not a count and not a state of what the row holds — those belong to
+     * whatever the row is about.
      *
-     * There is one today: a section brought by a package somebody is writing says
-     * *Development*, because unsigned code running out of a working tree should
-     * be visible from the column rather than only from the catalogue.
+     * **It is never drawn beside the label.** A column this narrow has room for
+     * one of the two, and the one a person navigates by is the name: a
+     * description set on the row takes the width the label needed and abbreviates
+     * it, so the list ends up hiding exactly what it exists to show. Hover is
+     * where the longer answer goes, which is where [`SourceTree`] already puts
+     * the same thing.
      */
     readonly note?: string;
     /**
@@ -2588,6 +2831,8 @@ export declare function startSession(args: {
     agentId: string;
     cwd: string;
     model?: string | null;
+    /** The record it is being opened under, for a screen that opened it from one. */
+    about?: SessionAbout | null;
 }): Promise<OpenedSession>;
 
 /**
@@ -2621,16 +2866,188 @@ export declare function supportsApiRange(range: string): boolean;
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
  *
+ * **3.2.0** is the half of an extension with no screen reaching what the half
+ * with one already reaches: `@sync-buzz/extension-api/service` gains `vault`
+ * and `net`, so a handler may read, replace and forget its own secrets and make
+ * a request against the hosts its manifest declared.
+ *
+ * **The number moves although `api:check` says the surface is unchanged**, and
+ * that is the one thing to know about this entry. The service surface is
+ * published as a second file — it is what a handler compiles against, not what
+ * the window does — so API Extractor never sees it and the report never moves.
+ * What decides the number is what a package can name: an author who writes
+ * `import { vault } from "@sync-buzz/extension-api/service"` against a range
+ * that resolves to 3.1.0 gets a contract with no such export. Exports added, so
+ * a minor, and the check that cannot see them is stated here rather than
+ * trusted to be remembered.
+ *
+ * **3.1.0** is what an extension offers an agent, written where an agent can
+ * read it. `InstalledExtension` gains `tools` and `ToolDeclaration` is what one
+ * of them is: the name a call carries, the sentence the decision to call it is
+ * made on, and the schema its arguments are checked against.
+ *
+ * On the record rather than only in the manifest because the two are read by
+ * different processes. A manifest is on the machine that installed the package;
+ * the record travels with the repository, and the server an agent reaches has
+ * no view of the catalogue at all — so a declaration that stayed in the window
+ * would be one only the window could read, which is the same reason `prompt` is
+ * already there.
+ *
+ * The package's own name for the function behind a tool is deliberately absent.
+ * It is how the package finds its own code, it changes when its author renames
+ * something, and nothing outside the package can act on it.
+ *
+ * An optional field and an export added, so a minor.
+ *
+ * **3.0.0** is the network door made whole, and the first major since this
+ * number started. `ExtensionNet.read` is gone; `ExtensionNet.fetch` takes a
+ * `NetRequest` — a URL, a method, headers and a body — and answers a
+ * `NetResponse`, which carries the final URL, the status, `ok`, the response's
+ * headers and the body. `NetAnswer` is gone with `read`, and `net.write` joins
+ * the capability list.
+ *
+ * **Why a major rather than a second method beside the first.** `read(url)` and
+ * `fetch(request)` would have been two ways to make one request, which is how
+ * one of them comes to behave differently from the other; and the older one
+ * would have gone on being the shape an author copied, because it is the
+ * shorter. The surface is small and the number is what a range is stated
+ * against, so paying for the break here is cheaper than carrying a second door
+ * for as long as this package exists.
+ *
+ * **Why this vocabulary.** It is `fetch`'s, narrowed to what crosses a process
+ * boundary, so an author writing against somebody else's API is reading the
+ * same words in our documentation and in theirs. Stated as one object rather
+ * than a URL and an init, because that is the shape that actually crosses:
+ * Rust reads the same members back, and a request has one spelling instead of
+ * one per surface. What `fetch` has and this does not — streams, `Request` and
+ * `Response` objects, `signal`, `credentials`, `mode`, `cache`, `redirect` — is
+ * refused by name when it is passed rather than dropped, so an author hears
+ * about the timeout they thought they set.
+ *
+ * **Why `net.write` is its own capability.** Reading something nobody in this
+ * window wrote and writing something into somebody else's are two things to
+ * agree to, and a card that said only the first would describe the smaller of
+ * them. The line between them is the protocol's: `GET` and `HEAD` are defined
+ * as safe, everything else is defined as being allowed to have an effect. It is
+ * declared in the manifest, so the card is honest before anything runs, and
+ * refused at the call, because which verb a package uses on a given day is
+ * inside its JavaScript.
+ *
+ * **2.17.0** is a tool an agent calls. `agent.tools` joins the capability
+ * list, and a manifest declaring `tools` without it is refused when it is read.
+ *
+ * The list is the whole of the change: what a tool *is* — a handler, the name
+ * it is published under, the sentence it is chosen on and the shape of what it
+ * takes — is written in the manifest and read by the host, and there is nothing
+ * for a package's own code to say about it. The same shape `schedule` has, and
+ * for the same reason: a fact about the package that a person is shown before
+ * anything of it runs belongs in the file they are shown, not in a call.
+ *
+ * A capability added and nothing else, so a minor. Every package stating `^2.0`
+ * goes on installing, and one that offers no tools cannot tell this release
+ * from the last.
+ *
+ * **2.16.0** is a package's own corner of the system keychain.
+ * `ExtensionHost` gains `vault`, `ExtensionVault` is its shape — read, write,
+ * forget — and `vault` joins the capability list.
+ *
+ * Handed over rather than imported, exactly as `net` is, and for a sharper
+ * version of the same reason: the owner half of every entry is the id this
+ * machine resolved, so a package able to pass an id would be a package spelling
+ * somebody else's namespace. There is no function on this surface to call
+ * instead, and nothing to hold for a package that did not ask.
+ *
+ * The three calls are one capability rather than three, because the flow that
+ * needs any of them needs all of them: a package that signs somebody in holds a
+ * token nobody could have typed, replaces it before it expires, and drops it
+ * when they sign out. A choice every author makes the same way is not a choice.
+ *
+ * What the shape cannot say for itself is said in `ExtensionVault`'s own doc
+ * comment, where an author reads it rather than where it is archived: a secret
+ * is never handed to an agent, and this build does not check that.
+ *
+ * A member added to what a host hands over, an export added and a capability
+ * added, so a minor: nothing an existing package names has changed, and one
+ * that never asks for `vault` cannot tell this release from the last.
+ *
+ * **2.15.0** is the record a conversation is being held under. `SessionRow`
+ * and `RememberedConversation` gain `about`, `SessionAbout` is its shape — a
+ * key, a kind and a title — and `openSession` takes one.
+ *
+ * It is beside `source` rather than inside it because the two answer different
+ * questions and only one of them has a person as an ordinary answer. A
+ * conversation somebody opened from a task has no orderer and is still about
+ * that task, so a list grouped by who asked leaves every one of those in one
+ * undifferentiated heap — which is exactly what a section that hands work to an
+ * agent produces most of.
+ *
+ * All three members are on it because a heading needs all three: the key is
+ * what a list groups by, the kind is what opening the record takes beside it,
+ * and the title is what the heading says. The title is a snapshot, so a heading
+ * is drawn without reading the corpus once per row of a list that is polled
+ * every few seconds — the same bargain `extensionName` makes, going stale in
+ * the same direction.
+ *
+ * `SessionSource.about` stays where it is and keeps its meaning: the key the
+ * order named, kept with the rest of the order. Dropping it would narrow
+ * something already returned, which is a major by the table above, and the
+ * number would buy nothing a reader of `about` does not already have.
+ *
+ * `useOpenRecord` comes with it, because a heading naming a record and no way
+ * to reach it is a heading that lies about being one. It is the narrow half of
+ * what the shell's own bodies use: *show this one*, by key and kind, and
+ * nothing about parsing a body, finding a picture or spelling a link. It
+ * answers `null` where nothing can show anything — the settings window, a test
+ * — so a section leaves the command out rather than drawing one that does
+ * nothing.
+ *
+ * Optional fields added, two exports added, and one optional argument on a
+ * call, so a minor: every package stating `^2.0` goes on installing, and one
+ * that never reads `about` cannot tell this release from the last.
+ *
+ * **2.14.0** is a picture the agent answered with. `Entry` gains a `picture`
+ * block and `SentImage` is its shape: a media type, how many bytes it was, and
+ * the id the session holds those bytes under — which is `sessionImage`'s
+ * argument, the same call a pasted picture is already drawn by.
+ *
+ * The bytes are deliberately not in it, and that is the whole design rather
+ * than an economy. A session's history is replayed **whole** to every screen
+ * that comes back to the conversation, so base64 carried in an event is paid
+ * for on every return for as long as the session lives. The host takes it out
+ * of the update as it records it and holds it against the one ceiling a
+ * conversation has for pictures — the same ceiling what was pasted into it
+ * counts against, because an agent asked for twenty pictures in one turn fills
+ * the same conversation a person can. `imageId` is `null` when it would not
+ * fit, and the block stays: a turn that lost its picture entirely is a turn in
+ * which the agent answered with nothing.
+ *
+ * `saveSessionImage` and `imageFileName` come with it, and they exist because
+ * the webview's own image menu cannot be made to work here. WebKit draws `Save
+ * Image` and `Open Image in New Window` on any `img`; the source is a `data:`
+ * URL, saving one needs a download handler the shell does not install, and
+ * opening one is a navigation the content security policy refuses. Both were
+ * measured dead. Two menu items that look like the system offering something
+ * and then do nothing are worse than no menu, so a picture is given a native
+ * menu of its own and this is what its command calls. The bytes are not sent
+ * back to be written: the panel answers with a path and Rust writes what the
+ * session already holds.
+ *
+ * Exports added and a returned shape widened, so a minor by the table above,
+ * exactly as 2.10.0 was. A package that has never heard of `picture` goes on
+ * installing and goes on running: an unknown block falls out of its switch and
+ * draws nothing, which is what it did with the picture before this build, and
+ * what breaks is a compile it will only see when its author next builds it.
+ *
  * **2.13.0** is which repository this project is. `projectRemote` answers with
  * `origin` as git states it, or `null` where there is none.
  *
  * An export added, so a minor.
  *
  * It exists because a section that reads a forge had nowhere to get its
- * subject. The first shape of Issues asked a person to type `owner/name` into
- * its own column, which is the interface asking for something the machine
- * already knows — and worse, letting one project be pointed at another
- * project's issues by a typo nobody would notice.
+ * subject. Its first shape asked a person to type `owner/name` into its own
+ * column, which is the interface asking for something the machine already
+ * knows — and worse, letting one project be pointed at another project's forge
+ * by a typo nobody would notice.
  *
  * A call rather than a member of `OpenProject`, which is where it was first
  * put. Three things decided it: the shell never needs the value, so every
@@ -2707,8 +3124,8 @@ export declare function supportsApiRange(range: string): boolean;
  * anything new by accident.
  *
  * Optional on the row, and it had to be: a package builds a `MemoryRecord` of
- * its own for a row that is not in the corpus — Records does, for the sheet
- * that asks what holds on to a record — and a required member would have made
+ * its own for a row that is not in the corpus — for a sheet that asks what
+ * holds on to a record, say — and a required member would have made
  * every one of those a compile error over a fact it has no answer to. That
  * would have been a major, over a member nobody had asked for. Absent rather
  * than empty on the wire as well, so the shape a caller reads is the shape a
@@ -2803,8 +3220,9 @@ export declare function supportsApiRange(range: string): boolean;
  * the order is written down, a key comes back, and the handler is finished long
  * before the agent has been raised. The capability arrives with the machinery
  * that honours it, as `schedule` did, and it is named separately from
- * `background` for the reason §5 gives: this is the one that spends somebody's
- * tokens while they are asleep, and the card is where they agree to that.
+ * `background` for the reason `docs/background.md` §5 gives: this is the one
+ * that spends somebody's tokens while they are asleep, and the card is where
+ * they agree to that.
  *
  * It is also the first capability enforced when the call is made rather than
  * when the manifest is read. `background` and `schedule` are visible in the
@@ -2884,7 +3302,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "2.13.0";
+export declare const SYNC_API_VERSION: "3.2.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
@@ -2899,7 +3317,7 @@ export declare const SYNC_API_VERSION: "2.13.0";
  * require one. Reading whether one is present is allowed too — an extension
  * that degrades deliberately is doing something better than refusing.
  */
-export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets", "net", "background", "schedule", "work.agent"];
+export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets", "net", "net.write", "vault", "background", "schedule", "work.agent", "agent.tools"];
 
 export declare type SyncCapability = (typeof SYNC_CAPABILITIES)[number];
 
@@ -2915,6 +3333,22 @@ export declare interface TableCommands {
 }
 
 export declare const TableCommandsProvider: Provider<(commands: TableCommands | null) => void>;
+
+/** One tool an extension offers an agent, as the project records it. */
+export declare interface ToolDeclaration {
+    /** What an agent calls it, without the extension's id in front of it. */
+    readonly name: string;
+    /** The whole of what a decision to call it is made on. */
+    readonly description: string;
+    /**
+     * The shape of what it takes, as JSON Schema, carried whole.
+     *
+     * Never read on the way through: what an argument means is the package's
+     * business, and a layer between that had an opinion about it would be a
+     * second opinion about somebody else's schema.
+     */
+    readonly input?: unknown;
+}
 
 export declare function Tooltip({ ...props }: React_2.ComponentProps<typeof Tooltip_2.Root>): React_2.JSX.Element;
 
@@ -3301,6 +3735,28 @@ export declare function useLiveSessions(active?: boolean): {
     readonly sessions: readonly SessionRow[];
     readonly reload: () => void;
 };
+
+/**
+ * Showing one record, for a section that has a reason to point at another.
+ *
+ * The narrow half of what the shell's own bodies follow links with, and it is
+ * narrow deliberately. What a section outside the shell needs is *show this
+ * one*; the rest of that interface is how a body is parsed, where a picture
+ * comes from and how a link is spelled from one record to another, none of
+ * which is a question an area asks and all of which would be a wider agreement
+ * than the one thing it wants.
+ *
+ * The kind travels with the key for the reason an intent carries it: which area
+ * shows a record is decided by its type, and nothing can find that out from a
+ * key without reading the record first.
+ *
+ * `null` where nothing can show anything — the settings window, a test — so a
+ * section leaves the command out rather than drawing one that does nothing.
+ */
+export declare function useOpenRecord(): ((record: {
+    key: string;
+    kind: string;
+}) => void) | null;
 
 export declare function useProjectView(projectPath: string): ProjectViewState;
 

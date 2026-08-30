@@ -127,9 +127,14 @@ function serviceShim() {
     `const call = async (name, argument) => JSON.parse(host(name, JSON.stringify(argument ?? {})));`,
   ];
   for (const [member, functions] of Object.entries(SERVICE_SURFACE)) {
-    const entries = Object.entries(functions).map(([name, { calls, wraps }]) => {
-      const argument = wraps === null ? "given" : `{ ${wraps}: given }`;
-      return `  ${name}: (given) => call(${JSON.stringify(calls)}, ${argument}),`;
+    const entries = Object.entries(functions).map(([name, { calls, takes }]) => {
+      // A member that takes the payload itself passes it on; one written with
+      // named arguments builds the object out of them, in the order the table
+      // states — which is the order the declarations state, because both are
+      // read from this one table.
+      const written = takes === null ? "given" : takes.join(", ");
+      const argument = takes === null ? "given" : `{ ${takes.join(", ")} }`;
+      return `  ${name}: (${written}) => call(${JSON.stringify(calls)}, ${argument}),`;
     });
     lines.push(`export const ${member} = {`, ...entries, `};`);
   }

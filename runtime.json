@@ -1,5 +1,5 @@
 {
-  "version": "2.13.0",
+  "version": "3.2.0",
   "values": [
     "ATTENTION_STATES",
     "Button",
@@ -77,6 +77,7 @@
     "folderName",
     "foldersUnder",
     "forgetRememberedConversation",
+    "imageFileName",
     "isAttachedType",
     "isVersion",
     "kindIcon",
@@ -91,6 +92,7 @@
     "renameMemoryFolder",
     "renameSession",
     "resumeSession",
+    "saveSessionImage",
     "sessionBacklog",
     "sessionImage",
     "showNativeContextMenu",
@@ -110,6 +112,7 @@
     "useDragHandle",
     "useFolders",
     "useLiveSessions",
+    "useOpenRecord",
     "useProjectView",
     "withDropped"
   ]

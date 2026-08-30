@@ -24,14 +24,15 @@
 // it does not recognise.
 import Ajv from "ajv/dist/2020.js";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { createRequire } from "node:module";
+import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
   ISOLATE_GLOBALS,
   RUNTIME_GLOBAL,
   SERVICE_HOST_GLOBAL,
-  SERVICE_SURFACE,
+  SERVICE_CAPABILITIES,
   filesOf,
   handlersOf,
   manifestOf,
@@ -247,6 +248,8 @@ export async function check(folder) {
   // Every kind it publishes is its own. Sync refuses the rest; this says so
   // before the package is anywhere near a project's memory.
   const published = new Set();
+  // Every mark the package names, gathered here and checked once below.
+  const marks = [["icon", manifest.icon]];
   for (const path of manifest.types ?? []) {
     const at = join(folder, path);
     // Said above. Here it is only a definition that cannot be read.
@@ -258,6 +261,25 @@ export async function check(folder) {
       );
     }
     if (definition.kind !== undefined) published.add(definition.kind);
+    marks.push([`${path}`, definition.icon]);
+  }
+
+  for (const area of manifest.areas ?? []) {
+    marks.push([`the area "${area.id}"`, area.icon]);
+  }
+
+  // A mark is a name from `lucide-react`, and until this check a name outside
+  // it failed silently in both directions: the schema takes any string, and the
+  // window has to answer with *something*, so it draws the neutral mark. The
+  // author saw a green build and a package that looked unfinished on a card.
+  const drawable = await drawableNames(folder);
+  if (drawable !== null) {
+    for (const [where, name] of marks) {
+      if (typeof name !== "string" || drawable.has(name)) continue;
+      complain(
+        `${where} asks for the mark "${name}", and lucide-react has no icon by that name. The window would draw the neutral mark instead. The names are at https://lucide.dev/icons, spelled as that page spells them.`,
+      );
+    }
   }
 
   // A badge that counts nothing is the failure this check exists for: it draws
@@ -361,15 +383,6 @@ export async function check(folder) {
  * load was tried first and is why this is a scan: `import()` uses `process`, so
  * removing it broke the CLI itself before it could read anything.
  */
-/**
- * What a package must ask for before a handler of it may order work.
- *
- * Sync's `handlers.rs` is the authority and this is a second statement of the
- * name, on the same terms as everything else in this package: where the two
- * disagree Sync is right and this is behind.
- */
-const WORK_AGENT = "work.agent";
-
 async function checkService(folder, manifest, complain) {
   const named = handlersOf(manifest);
   if (manifest.service === undefined) {
@@ -393,22 +406,26 @@ async function checkService(folder, manifest, complain) {
     }
   }
 
-  // The one capability a manifest cannot give away. `background` and `schedule`
+  // The capabilities a manifest cannot give away. `background` and `schedule`
   // are visible in the file and are refused when it is read; whether a handler
-  // orders work is only ever visible here, in what the build produced. Sync
-  // refuses the call itself, but for a handler on a clock that refusal lands at
-  // three in the morning with nobody in front of it — so it is said here too,
-  // where the author is.
+  // orders work, opens the keychain or dials out is only ever visible here, in
+  // what the build produced. Sync refuses each call itself, but for a handler
+  // on a clock that refusal lands at three in the morning with nobody in front
+  // of it — so it is said here too, where the author is.
   //
-  // The name is the one the surface's shim emits, taken from the contract
-  // rather than spelled again. A package that does not import `work` does not
+  // The names are the ones the surface's shim emits, taken from the contract
+  // rather than spelled again. A package that does not import a member does not
   // carry it: the shim's unused members are dropped by the build, which was
   // measured rather than assumed before this check was written.
-  const orders = SERVICE_SURFACE.work.order.calls;
-  if (source.includes(orders) && !(manifest.capabilities ?? []).includes(WORK_AGENT)) {
-    complain(
-      `its service module calls ${orders}() and the manifest does not ask for the "${WORK_AGENT}" capability. Ordering work spends somebody's tokens while they are asleep, and the card they install from has to say so.`,
-    );
+  const asked = manifest.capabilities ?? [];
+  for (const { capability, calls, because } of SERVICE_CAPABILITIES) {
+    if (asked.includes(capability)) continue;
+    const called = calls.find((name) => source.includes(name));
+    if (called !== undefined) {
+      complain(
+        `its service module calls ${called}() and the manifest does not ask for the "${capability}" capability. ${because}`,
+      );
+    }
   }
 
   globalThis[SERVICE_HOST_GLOBAL] = () => "null";
@@ -444,6 +461,27 @@ async function checkService(folder, manifest, complain) {
 }
 
 /** What Node has and a handler's isolate does not. `console` is the host's. */
+/**
+ * The names the window can draw, read from the `lucide-react` the package is
+ * built against rather than from a list kept here.
+ *
+ * A copy of two thousand names in this file would be a second answer to a
+ * question the library already answers, and it would be wrong the first time
+ * the library adds an icon. `null` when the library is not reachable: it is a
+ * peer dependency, and refusing to check is honest where inventing a list is
+ * not.
+ */
+async function drawableNames(folder) {
+  try {
+    const from = createRequire(join(resolve(folder), "package.json"));
+    const at = pathToFileURL(from.resolve("lucide-react/dynamic.mjs")).href;
+    const { iconNames } = await import(at);
+    return new Set(iconNames);
+  } catch {
+    return null;
+  }
+}
+
 function absentFromTheIsolate() {
   return Object.getOwnPropertyNames(globalThis).filter(
     (name) => name !== "console" && !ISOLATE_GLOBALS.includes(name),

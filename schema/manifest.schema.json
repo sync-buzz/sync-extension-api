@@ -33,7 +33,7 @@
       "type": "string"
     },
     "icon": {
-      "description": "A name from the shared icon library, resolved by the host at load. A name the host cannot draw is shown neutrally rather than guessed at.",
+      "description": "The mark shown for this package, as a lucide-react icon name in that library's own kebab-case spelling \u2014 \"book-marked\", \"circle-dot\", \"folder-git-2\". Any name at https://lucide.dev/icons is one the host can draw; a name outside it is drawn with the neutral mark, and `sync-ext check` reports it. It is a name and not a file so that it still resolves once the package has been removed, which is what a record written by this package needs.",
       "type": "string"
     },
     "engines": {
@@ -67,6 +67,36 @@
             "pattern": "^(?!-)[A-Za-z0-9-]{1,63}(\\.(?!-)[A-Za-z0-9-]{1,63})*\\.(?!-)[A-Za-z-][A-Za-z0-9-]{0,62}$"
           },
           "uniqueItems": true
+        },
+        "secrets": {
+          "description": "Secrets the host writes into a header for you, so your code never holds one. Each entry names one of your own keychain entries and one host from the list above; Sync reads the value in Rust and puts it in the header. This is the recommended way to use a credential — the other way, reading the value yourself, needs the `vault` capability and exists for what a header cannot carry, such as a signature.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["host", "header", "secret"],
+            "properties": {
+              "host": {
+                "description": "Which of `net.hosts` it goes to, and only that one. A token for one API arriving at another is how a credential reaches somebody who never asked for it, so a package talking to two writes two entries.",
+                "type": "string"
+              },
+              "header": {
+                "description": "The header the value is written into — `authorization` for almost everything, and an API key often wants `x-api-key`.",
+                "type": "string",
+                "minLength": 1
+              },
+              "secret": {
+                "description": "What you call it in your own corner of the keychain. The name only: the owner half is your package's id and is composed in Rust, so this cannot name anybody else's entry.",
+                "type": "string",
+                "minLength": 1
+              },
+              "scheme": {
+                "description": "What goes in front of the value — `Bearer` for most. Absent writes the value alone, which is what an API-key header wants. A scheme rather than a template: `Bearer {}` would be a small language in a manifest, and every one of those grows.",
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
         }
       }
     },
@@ -104,7 +134,10 @@
             "description": "One of the shapes the shell draws, and the module must fill exactly that frame's columns: browse has a navigator and an inspector, list a navigator, detail an inspector, single neither. Returning a column the frame does not have fails to install rather than being dropped.",
             "enum": ["browse", "list", "detail", "single"]
           },
-          "icon": { "type": "string" },
+          "icon": {
+            "description": "The mark on this section's row, as a lucide-react icon name \u2014 the same vocabulary as the package's own icon.",
+            "type": "string"
+          },
           "badge": {
             "description": "A count the host draws on this section's row. Nothing of the package runs to produce it, which is the point: a section is mounted the first time it is visited, so a number only a mounted section could raise would be missing on the first launch after a project is opened \u2014 exactly when somebody wants it. Omit it for a section with nothing to count.",
             "type": "object",
@@ -213,6 +246,34 @@
             "pattern": "^\\S(.*\\S)?$"
           },
           "every": { "$ref": "#/$defs/interval" }
+        }
+      }
+    },
+    "tools": {
+      "description": "Handlers an agent may call, and everything it is told before deciding to. The third occasion, and the first whose caller is not the application: a clock and an install happen here, and a tool is a name somebody else says. An agent reaches one as `<your id>.<tool>`, through Sync's own `sync_call`, and reads what each takes from `sync_instructions`.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["handler", "name", "description"],
+        "properties": {
+          "handler": { "$ref": "#/$defs/handlerName" },
+          "name": {
+            "description": "What an agent calls it, without your id in front. Lowercase letters, digits, hyphens and underscores, starting with a letter — a dot would read as the separator between your id and this. Separate from `handler` because the two are named for different readers: one is your own name for a function, the other is a fragment an agent puts in a call.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*[a-z0-9]$"
+          },
+          "description": {
+            "description": "What the tool does, in your own words. Required, and it is the whole of what an agent decides on: a tool with no sentence is one nothing will ever call correctly.",
+            "type": "string",
+            "minLength": 1,
+            "$comment": "Whitespace is not a sentence, and the host refuses one.",
+            "pattern": "^\\S(.*\\S)?$"
+          },
+          "input": {
+            "description": "The shape of what it takes, as JSON Schema, carried whole. Sync never reads what an argument means — that is yours — but it does check arguments against this before your handler runs, and refuses in words naming what was wrong. Absent is a tool that takes nothing.",
+            "type": "object"
+          }
         }
       }
     }
