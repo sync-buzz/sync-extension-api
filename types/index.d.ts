@@ -1072,8 +1072,8 @@ export declare interface InstalledExtension {
      */
     readonly integrity?: string;
     /**
-     * Where the package came from: `registry`, `file`, `folder`, or `seeded`
-     * for an archive the build shipped with.
+     * Where the package came from: `registry`, `file`, `folder`, or `seeded` —
+     * the last written only by builds that shipped archives inside the bundle.
      *
      * The difference between a dependency and somebody's working tree. A project
      * declaring one that came from a folder was composed against code being
@@ -2590,6 +2590,16 @@ export declare interface SessionRow {
      * the agent's name is the only thing there is to call it.
      */
     readonly title: string | null;
+    /**
+     * The project this conversation belongs to.
+     *
+     * Beside `cwd` rather than instead of it, because they answer two questions:
+     * this is whose conversation it is, and `cwd` is where the agent is working.
+     * They differ exactly when the work is being done in a disposable tree, so a
+     * screen picking out its own conversations matches on this — matching on
+     * `cwd` loses every conversation in a tree the moment it is made.
+     */
+    readonly project: string;
     readonly cwd: string;
     readonly status: SessionStatus;
     readonly openedAtMs: number;
@@ -2975,6 +2985,13 @@ export declare function supportsApiRange(range: string): boolean;
  * promised", which would be true of the code and false of the intent: the whole
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
+ *
+ * **3.5.0** is one field, and it is the field 3.4.0 needed and did not have.
+ * `SessionRow` carries `project` beside `cwd`: whose conversation it is, and
+ * where the agent is working. The two are the same until a conversation is held
+ * in a working tree, and a section picking out its own conversations by `cwd` —
+ * which was the only thing it could do — lost every one of them the moment it
+ * was made. Added, so a minor.
  *
  * **3.4.0** is where a conversation happens. `startSession` takes a `worktree`,
  * which is either `"new"` or a tree that already exists, and a `SessionRow`
@@ -3440,7 +3457,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "3.4.0";
+export declare const SYNC_API_VERSION: "3.5.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
