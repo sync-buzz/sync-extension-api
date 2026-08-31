@@ -51,6 +51,58 @@ test("each capability names calls that exist", () => {
   }
 });
 
+// The door a handler knocks on is the door a screen knocks on: `net.fetch`
+// parses one request type in Rust, whichever half of a package sent it. So the
+// two declarations of that type in this package have to name the same members.
+//
+// This is not the same check as the one above, and the difference is the whole
+// reason for it: that one holds the *calls* together, and it passed for as long
+// as `bodyBase64` and `form` existed on one side and not the other — a handler
+// that could not say it was sending a file, against a host that would have
+// accepted one.
+test("both halves state the same request, member for member", () => {
+  const rolled = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "types", "index.d.ts"),
+    "utf8",
+  );
+  for (const shape of ["NetRequest", "NetPart"]) {
+    assert.deepEqual(
+      membersOf(declarations, shape),
+      membersOf(rolled, shape),
+      `\`${shape}\` says one thing to a handler and another to a screen`,
+    );
+  }
+});
+
+/**
+ * The member names one interface declares, in order, from a `.d.ts`.
+ *
+ * By brace depth rather than by the first `}`, because a member's own doc
+ * comment may contain one and the shapes here are flat only until they are not.
+ */
+function membersOf(declarations, name) {
+  const opened = declarations.indexOf(`interface ${name} {`);
+  assert.notEqual(opened, -1, `nothing declares \`${name}\``);
+  let depth = 0;
+  let closed = -1;
+  for (let at = declarations.indexOf("{", opened); at < declarations.length; at += 1) {
+    if (declarations[at] === "{") depth += 1;
+    if (declarations[at] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        closed = at;
+        break;
+      }
+    }
+  }
+  assert.notEqual(closed, -1, `\`${name}\` is never closed`);
+  return [
+    ...declarations.slice(opened, closed).matchAll(/^\s+readonly (\w+)\??:/gm),
+  ]
+    .map((match) => match[1])
+    .sort();
+}
+
 // A scan finds a name in the built module. `net.write` is not a name: the verb
 // a request uses is computed, so a package that builds its method from a
 // variable would pass a check the package writing "POST" fails. A check that

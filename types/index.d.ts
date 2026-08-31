@@ -44,6 +44,23 @@ export declare interface AdapterState {
 }
 
 /**
+ * Keep the work: give the tree's commit the name a person chose.
+ *
+ * The name is git's to accept — `feature/NIK-42`, `wip`, whatever the
+ * repository's convention is — and it is refused here only when git refuses it,
+ * when that name is taken, or when nothing was committed in the tree, which
+ * would be a branch pointing at the commit the work started from.
+ *
+ * The tree stays where it is and stays detached, so the new branch is free for
+ * whoever named it to check out.
+ */
+export declare function adoptWorktree(args: {
+    project: string;
+    path: string;
+    branch: string;
+}): Promise<void>;
+
+/**
  * An agent, plus whether the package it is reached through has been downloaded.
  *
  * Two reads rather than one field, because they answer to different things: the
@@ -480,6 +497,19 @@ export declare interface Dependents {
  * engine refuses it for the same reason.
  */
 export declare function describeMemoryFolder(project: string, folder: string, kind: string): Promise<MemoryDocument>;
+
+/**
+ * Throw the tree away.
+ *
+ * **Commits made in it go with it** unless {@link adoptWorktree} named them
+ * first, and files it never committed go too. Whatever offers this says so
+ * before calling it: this is the deletion the whole arrangement exists to make
+ * possible, and it is still a deletion.
+ */
+export declare function discardWorktree(args: {
+    project: string;
+    path: string;
+}): Promise<void>;
 
 /**
  * A record as the window has it: what the store answered, with whatever has been
@@ -1611,6 +1641,29 @@ export declare interface NativeMenuItem {
 export declare type NetMethod = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
+ * One part of a form.
+ *
+ * **A part is one thing.** `text` or `base64`, never both and never neither:
+ * two values is a package that has not decided what it is sending, and none is
+ * a name the other end is handed with nothing under it. Both are refused by the
+ * part's own name, because a form has several and a refusal about an unnamed
+ * one cannot be acted on.
+ *
+ * `filename` is what makes a part a file rather than a field, and `contentType`
+ * is what the bytes are. Both are the package's to say: what a picture is
+ * called and what it is are known where it came from, and nowhere after.
+ */
+export declare interface NetPart {
+    /** What the other end looks this part up by. */
+    readonly name: string;
+    readonly text?: string;
+    readonly base64?: string;
+    readonly filename?: string;
+    /** `image/png`, for a server that does not guess. */
+    readonly contentType?: string;
+}
+
+/**
  * One request, as the package states it.
  *
  * `fetch`'s vocabulary — `method`, `headers`, `body` — narrowed to what crosses
@@ -1634,11 +1687,39 @@ export declare interface NetRequest {
      * The four the transport writes for itself — `host`, `content-length`,
      * `connection`, `transfer-encoding` — are refused: a request that set its own
      * would disagree with itself, and the server would answer about something
-     * else entirely.
+     * else entirely. `content-type` joins them for a request sending `form`, and
+     * only for that one: the boundary is written where the parts are assembled.
      */
     readonly headers?: Readonly<Record<string, string>>;
-    /** What is sent, for a method that carries one. Text, and at most 2 MB. */
+    /**
+     * What is sent, when it is text.
+     *
+     * **One of three, and a request carries one of them.** This is the spelling
+     * that was here first and it means text; a picture put in it would be sent as
+     * the base64 it was written as, which is nothing any server was asked for. So
+     * bytes and forms are said differently, and saying two of the three is
+     * refused rather than resolved for the package.
+     */
     readonly body?: string;
+    /**
+     * What is sent, when it is bytes: a picture, a signature, an archive.
+     *
+     * Base64 because this crosses a process boundary as JSON and JSON has no
+     * bytes. The encoding is undone before the request leaves, so what the server
+     * receives is the bytes — and what belongs here is the encoding on its own. A
+     * `data:` URL pasted whole is refused, which is the mistake this member
+     * attracts.
+     */
+    readonly bodyBase64?: string;
+    /**
+     * What is sent, when the other end asked for a `multipart/form-data` form.
+     *
+     * The shape almost every *upload a file* API is written against, and the one
+     * thing here a package could not have composed for itself: the boundary lives
+     * in a header and repeats between the parts, so the body and the header have
+     * to be written by the same code or they describe different requests.
+     */
+    readonly form?: readonly NetPart[];
 }
 
 /**
@@ -2110,6 +2191,15 @@ export declare interface RememberedConversation {
     readonly agentId: string;
     readonly agentName: string;
     readonly cwd: string;
+    /**
+     * The working tree it was held in, when it was held in one.
+     *
+     * Kept with the pointer because resuming has to land in the same files, and a
+     * tree is the one part of a conversation somebody can delete from underneath
+     * it: a pointer naming a tree that is gone is refused rather than quietly
+     * resumed in the project.
+     */
+    readonly worktree?: Worktree;
     readonly title: string | null;
     readonly openedAtMs: number;
     readonly lastSeenMs: number;
@@ -2522,6 +2612,17 @@ export declare interface SessionRow {
      */
     readonly source?: SessionSource;
     /**
+     * The working tree this conversation is being held in, when it is not being
+     * held in the project's own.
+     *
+     * `undefined` is the ordinary answer. When it is there, it is what both
+     * gestures a tree offers are addressed by — keeping the work under a name,
+     * and throwing it away — and it is why the row carries the tree rather than
+     * only the directory: `cwd` says where the agent is working, this says that
+     * the place is disposable and where it came from.
+     */
+    readonly worktree?: Worktree;
+    /**
      * The record this conversation is being held under, when there is one.
      *
      * Beside `source` rather than inside it, because *who asked* and *what it is
@@ -2833,6 +2934,15 @@ export declare function startSession(args: {
     model?: string | null;
     /** The record it is being opened under, for a screen that opened it from one. */
     about?: SessionAbout | null;
+    /**
+     * Where to work: the project itself when this is absent, a working tree made
+     * now (`"new"`), or one that already exists, by its path.
+     *
+     * Chosen when the conversation is opened and fixed for its life — the
+     * directory has gone to the agent by the time there is anything to change it
+     * from.
+     */
+    worktree?: WorktreeChoice | null;
 }): Promise<OpenedSession>;
 
 /**
@@ -2865,6 +2975,34 @@ export declare function supportsApiRange(range: string): boolean;
  * promised", which would be true of the code and false of the intent: the whole
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
+ *
+ * **3.4.0** is where a conversation happens. `startSession` takes a `worktree`,
+ * which is either `"new"` or a tree that already exists, and a `SessionRow`
+ * carries the tree it is being held in; `worktreesIn`, `adoptWorktree` and
+ * `discardWorktree` are the list and the two decisions a tree ends in. Added,
+ * nothing changed, so a minor.
+ *
+ * A tree is chosen when a conversation is opened and not afterwards, which is
+ * the shape of the addition rather than an omission from it: the directory
+ * reaches the agent in `session/new` and it reads files from there, so a
+ * conversation whose tree could be changed under it would be an agent answering
+ * about files it never saw. What a package offers on a running conversation is
+ * therefore the two gestures, never the choice again.
+ *
+ * The path of an existing tree is checked against git's own list of this
+ * project's trees. Where trees live is the installation's choice, and a caller
+ * that could name any directory would have taken that choice away.
+ *
+ * **3.3.0** is a package sending something that is not text. `NetRequest` gains
+ * `bodyBase64` for bytes and `form` for `multipart/form-data`, and `NetPart` is
+ * what one part of a form is. Members added and none changed, so a minor: a
+ * package that sends JSON is compiled by this the way it was before.
+ *
+ * The three are spelled apart rather than `body` being widened, and that is the
+ * decision the number is really recording. One member meaning text or bytes
+ * would be a member whose meaning is guessed from its contents — a base64
+ * string is text, and a package sending one as text would go on being right
+ * until the day it wasn't.
  *
  * **3.2.0** is the half of an extension with no screen reaching what the half
  * with one already reaches: `@sync-buzz/extension-api/service` gains `vault`
@@ -3302,7 +3440,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "3.2.0";
+export declare const SYNC_API_VERSION: "3.4.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
@@ -3787,5 +3925,81 @@ export declare interface WindowCommands {
 
 /** Records how much of a session's history was already gone when we subscribed. */
 export declare function withDropped(transcript: Transcript, dropped: number): Transcript;
+
+/** One working tree of a project. */
+export declare interface Worktree {
+    /** Where it is, and how every other call names it. */
+    readonly path: string;
+    /**
+     * The branch the work is aimed at: what the project was on when the tree was
+     * made, or the branch the tree is checked out on when somebody made it
+     * themselves. `undefined` when neither had one.
+     *
+     * Not a promise to merge there — nothing merges — but it is what a person
+     * chooses between trees by.
+     */
+    readonly base?: string;
+    /** The commit it started from. */
+    readonly baseCommit: string;
+    /**
+     * Where it is now. Equal to `baseCommit` while nothing has been committed in
+     * it, which is how a menu says *empty* without reading its history.
+     */
+    readonly head: string;
+}
+
+/**
+ * Where a conversation is to be held.
+ *
+ * `"new"` makes one. An existing tree is named by its path, and two
+ * conversations in one tree are allowed: carrying on work an agent left
+ * half-done is the ordinary reason to pick one that is already there.
+ */
+export declare type WorktreeChoice = "new" | {
+    readonly path: string;
+};
+
+/**
+ * The window's route to a project's disposable working trees.
+ *
+ * A tree is a place to work that can be thrown away: it is made from the
+ * project's `HEAD`, detached, so nothing is added to the repository while an
+ * agent works in it. The name of the branch is asked for only when somebody
+ * decides to keep the work — branch conventions belong to whoever owns the
+ * repository, and a name invented here would turn up in their `git branch` as
+ * something they did not choose.
+ *
+ * What that buys is reversibility, not safety. An agent working in a tree has a
+ * shell like any other, and `docs/background.md` §9 does not promise a sandbox.
+ * What is true is narrower and still worth having: the files it edited are
+ * files nobody else is looking at, and undoing all of it is one gesture.
+ *
+ * Every function is one `invoke` into `src-tauri/src/worktree.rs`, which owns
+ * git and decides where trees live. In particular a path is never a way to
+ * choose a location: naming an existing tree is checked against git's own list,
+ * so a caller cannot raise an agent in an arbitrary directory by calling it a
+ * working tree.
+ */
+/**
+ * What went wrong, with the kind the command layer gave it.
+ *
+ * The kinds are open on purpose — a caller switches on the ones it means to
+ * handle and shows the message for the rest, which is what keeps a new refusal
+ * from arriving as a blank screen.
+ */
+export declare class WorktreeError extends Error {
+    readonly kind: string;
+    constructor(kind: string, message: string);
+}
+
+/**
+ * Every working tree this project has, the project's own excluded.
+ *
+ * Also the answer to whether trees are possible here at all: a folder that is
+ * not a repository, or a machine with no git, refuses rather than answering an
+ * empty list. A caller offering the choice can ask once and leave the gesture
+ * out when this throws.
+ */
+export declare function worktreesIn(project: string): Promise<readonly Worktree[]>;
 
 export { }

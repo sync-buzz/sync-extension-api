@@ -1,5 +1,5 @@
 {
-  "version": "3.2.0",
+  "version": "3.4.0",
   "values": [
     "ATTENTION_STATES",
     "Button",
@@ -62,7 +62,9 @@
     "TypeRemovalSheet",
     "TypeSheet",
     "UnmatchedFiles",
+    "WorktreeError",
     "absenceLabel",
+    "adoptWorktree",
     "buttonVariants",
     "chooseAttachments",
     "cn",
@@ -72,6 +74,7 @@
     "deleteMemoryFolder",
     "deleteSession",
     "describeMemoryFolder",
+    "discardWorktree",
     "explain",
     "foldTranscript",
     "folderName",
@@ -114,6 +117,7 @@
     "useLiveSessions",
     "useOpenRecord",
     "useProjectView",
-    "withDropped"
+    "withDropped",
+    "worktreesIn"
   ]
 }

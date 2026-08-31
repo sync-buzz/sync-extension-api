@@ -296,8 +296,64 @@ export interface NetRequest {
   readonly url: string;
   /** `GET` when you do not say, which is what `fetch` does. */
   readonly method?: Method;
+  /**
+   * Header names and values, as you write them.
+   *
+   * `content-type` is refused for a request sending `form`, and only for that
+   * one: the boundary is written where the parts are assembled, so a type you
+   * set yourself would describe a different request from the one that goes out.
+   */
   readonly headers?: { readonly [name: string]: string };
+  /**
+   * What you send, when it is text.
+   *
+   * **One of three, and a request carries one of them.** This is the spelling
+   * that was here first and it means text: a picture put in it goes out as the
+   * base64 you wrote it as, which is nothing any server asked for. Saying two
+   * of the three is refused rather than resolved for you.
+   */
   readonly body?: string;
+  /**
+   * What you send, when it is bytes: a picture, a signature, an archive.
+   *
+   * Base64, because this crosses a process boundary as JSON and JSON has no
+   * bytes. The encoding is undone before the request leaves, so what the server
+   * receives is the bytes — and what belongs here is the encoding on its own. A
+   * `data:` URL pasted whole is refused, which is the mistake this member
+   * attracts.
+   */
+  readonly bodyBase64?: string;
+  /**
+   * What you send, when the other end asked for a `multipart/form-data` form.
+   *
+   * The shape almost every *upload a file* API is written against, and the one
+   * thing on this door you could not have composed for yourself: the boundary
+   * lives in a header and repeats between the parts, so the body and the header
+   * have to be written by the same code or they describe different requests.
+   */
+  readonly form?: readonly NetPart[];
+}
+
+/**
+ * One part of a form.
+ *
+ * **A part is one thing.** `text` or `base64`, never both and never neither:
+ * two values is a handler that has not decided what it is sending, and none is
+ * a name the other end is handed with nothing under it. Both are refused by the
+ * part's own name, because a form has several and a refusal about an unnamed
+ * one cannot be acted on.
+ *
+ * `filename` is what makes a part a file rather than a field, and `contentType`
+ * is what the bytes are. Both are yours to say: what a picture is called and
+ * what it is are known where it came from, and nowhere after.
+ */
+export interface NetPart {
+  /** What the other end looks this part up by. */
+  readonly name: string;
+  readonly text?: string;
+  readonly base64?: string;
+  readonly filename?: string;
+  readonly contentType?: string;
 }
 
 /**
