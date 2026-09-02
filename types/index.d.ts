@@ -2221,6 +2221,12 @@ export declare interface RememberedConversation {
      * its agent stopped would move up the list under somebody reading it.
      */
     readonly about?: SessionAbout;
+    /**
+     * The conversation this one was delegated from, by that conversation's own
+     * agent id. Written down rather than held in memory, so a tree does not
+     * flatten when the application is restarted.
+     */
+    readonly parent?: string;
     /** The record it was kept as, when somebody kept it on this machine. */
     readonly recordKey?: string;
 }
@@ -2646,6 +2652,25 @@ export declare interface SessionRow {
      * mistake a `Running`/`Not running` split already made once.
      */
     readonly about?: SessionAbout;
+    /**
+     * The agent's own id for this session, once the agent has given one.
+     *
+     * What a row is named by when another row names it. A pointer has always
+     * been addressed this way and a live row by this run's key, and the two were
+     * never comparable — which stopped being good enough when a conversation
+     * began naming the one it came out of.
+     */
+    readonly acpSession?: string;
+    /**
+     * The conversation this one was delegated from, by that conversation's own
+     * agent id.
+     *
+     * Read against {@link SessionRow.acpSession} of the other conversations,
+     * whichever half of the list they came from. A parent nothing in the list
+     * names is drawn as no parent at all: pointers prune, and a child may outlive
+     * the row above it.
+     */
+    readonly parent?: string;
 }
 
 /**
@@ -2697,6 +2722,12 @@ export declare type SessionStatus =
 | "ready"
 /** A turn is running. */
 | "working"
+/**
+* A turn has been said into it and is waiting its turn to run. What a
+* conversation delegated from one that already has a delegated run under it
+* says until that one is finished.
+*/
+| "queued"
 /** Stopped on a question only a person can answer. */
 | "asking"
 /** Ended by itself, or its process died. */
@@ -2953,6 +2984,16 @@ export declare function startSession(args: {
      * from.
      */
     worktree?: WorktreeChoice | null;
+    /**
+     * The conversation this one is being delegated from, by the agent's own id
+     * for it — `acpSession`, as a row and a pointer alike carry it.
+     *
+     * A conversation opened this way is filed where its parent is: what it is
+     * about and who ordered it are read from the parent rather than taken beside
+     * this, so a package cannot file work under a record it has nothing to do
+     * with. A chain of them is two conversations deep, and a third is refused.
+     */
+    parent?: string | null;
 }): Promise<OpenedSession>;
 
 /**
@@ -2985,6 +3026,49 @@ export declare function supportsApiRange(range: string): boolean;
  * promised", which would be true of the code and false of the intent: the whole
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
+ *
+ * **3.7.0** is what one conversation came out of, and what came of it.
+ * `startSession` takes a `parent` — another conversation, by the agent's own id
+ * for it — and `work.order` takes one beside it. A `SessionRow` carries both
+ * `parent` and its own `acpSession`, which is what the first is read against,
+ * and a pointer carries `parent` too, so the descent survives the application
+ * being restarted.
+ *
+ * Nothing is passed beside it. What a delegated conversation is *about* and who
+ * ordered it are read from the parent rather than stated by the caller, which
+ * is what keeps a heading unforgeable: a package may say what it delegated
+ * from and cannot say what to file the result under. A chain is two
+ * conversations deep and a third is refused in words.
+ *
+ * `SessionStatus` gains `queued` beside `working`, for the conversation whose
+ * first turn is recorded and waiting: one delegated run happens under a
+ * conversation at a time, because the work is carried out in that
+ * conversation's own working tree. Reporting it as `working` was the
+ * alternative, and the wait is as long as the run above it — an hour of a row
+ * saying an agent is working when no agent has been asked anything.
+ *
+ * **Two changes here are the ones to be careful about, and both are additions
+ * rather than loosenings.** `acpSession` on a live row: a pointer was always
+ * addressed by that id and a live row by this run's key, so a window handed a
+ * child's `parent` had nothing to compare it with. And a member added to a
+ * union that is *returned* — which is not "an accepted type widened", and is
+ * none of the three that make a major either: nothing is removed, renamed or
+ * narrowed, and every status that existed still means what it meant. What it
+ * costs is a package that switches over the union exhaustively and proves it,
+ * which will want a branch for the seventh.
+ *
+ * **3.6.0** makes the published theme keep the promise it already stated. Its
+ * names are unchanged and no rule about them moved; what changed is what they
+ * are worth at paint. A size or a spacing step written as a number inside
+ * `@theme inline` is compiled *into* every utility that uses it, so `text-sm`
+ * became `12px` in the window and `12px` again inside every package — a value
+ * shipped, not a reference, and nothing on the document could move it
+ * afterwards. Colours never had the problem, because each of them was already
+ * written as a `var()`. Now the metrics are too, and a build that wants a
+ * different scale — a phone, or a person who reads at a different size —
+ * changes one place and every package follows with nothing rebuilt. A package
+ * built against 3.5 keeps the numbers it compiled, which is why this is a
+ * minor and not a break.
  *
  * **3.5.0** is one field, and it is the field 3.4.0 needed and did not have.
  * `SessionRow` carries `project` beside `cwd`: whose conversation it is, and
@@ -3457,7 +3541,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "3.5.0";
+export declare const SYNC_API_VERSION: "3.7.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.

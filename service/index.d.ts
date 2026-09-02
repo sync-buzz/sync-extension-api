@@ -202,6 +202,35 @@ export interface WorkOrder {
    * clearing the slot and putting nothing in it.
    */
   readonly keep?: "each" | "latest";
+  /**
+   * The conversation this work is being delegated from, by the agent's own id
+   * for it — `acpSession` on a `SessionRow` or on a remembered conversation.
+   *
+   * Absent is the ordinary answer, and it is what work on a clock says: a
+   * routine comes out of nothing. Give it when you are ordering on an agent's
+   * behalf, and three things follow.
+   *
+   * **What the work is about, and who ordered it, stop being yours to state.**
+   * Both are read from the conversation you name. That is what keeps a heading
+   * unforgeable: you may say what the work was delegated *from* and cannot say
+   * what to file the result under, so an agent reaching this through your tool
+   * cannot move its own work into somebody else's group.
+   *
+   * **One at a time.** A conversation has one delegated run under it, and the
+   * next one's first turn waits — the work is carried out in that
+   * conversation's own working tree, and two agents at once are two agents in
+   * one set of files. A conversation that is waiting says `"queued"`.
+   *
+   * **The answer goes back on its own.** Whatever the agent says last in that
+   * first turn is handed to the conversation you named, as an ordinary turn,
+   * once it is up and not busy — nothing is raised to be told, and there is
+   * nothing to poll. Sync tells the agent so, in the prompt, so you do not have
+   * to.
+   *
+   * A chain is two conversations deep. Naming one that was itself delegated is
+   * a refusal you can catch, as is naming one this project does not hold.
+   */
+  readonly parent?: string;
 }
 
 /**
