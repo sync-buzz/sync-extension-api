@@ -2941,6 +2941,23 @@ export declare interface SourceTreeItem {
      */
     readonly muted?: boolean;
     /**
+     * Drawn in the warning tier, for a row that is waiting on the person reading
+     * the column.
+     *
+     * One bit, and it says *this one wants you*. What it is waiting for belongs
+     * to whatever the row is about and goes in [`tooltip`](#tooltip): a column
+     * this narrow has room for a colour, not for a sentence.
+     *
+     * It is a state rather than a quantity, which is why it is not a value of
+     * [`count`](#count). A number meaning "how many" at some values and "answer
+     * me" at others is a column that has to be read twice.
+     *
+     * Beside [`muted`](#muted) it wins. A row cannot both be quieter than its
+     * neighbours and be the one thing on screen worth answering, and of the two
+     * only this one is about the person rather than about the row.
+     */
+    readonly emphasised?: boolean;
+    /**
      * What the secondary button opens. Built when asked for, so the commands act
      * on the row as it stands then rather than as it stood when it was drawn.
      */
@@ -3026,6 +3043,20 @@ export declare function supportsApiRange(range: string): boolean;
  * promised", which would be true of the code and false of the intent: the whole
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
+ *
+ * **3.8.0** gives `SourceTreeItem` an `emphasised`, so a row of a tree can say
+ * that it is waiting on the person reading the column. An addition, so a minor
+ * by the table above, and every package stating `^3.0` goes on installing.
+ *
+ * It closes an asymmetry rather than answering a request. The two source lists
+ * this surface publishes are twins by intent — same row height, same selection,
+ * one tab stop — and the flat one has carried a mark for what a row is about
+ * since 2.2.0 while the nested one carried nothing but a count. A column whose
+ * rows are things that act and finish has states in it, and a count cannot hold
+ * one: a number meaning "how many" at some values and "answer me" at others is
+ * a column read twice. So it is a bit, drawn in the warning tier by the window
+ * rather than by the caller, and what the row is waiting for goes in the
+ * tooltip that member already has.
  *
  * **3.7.0** is what one conversation came out of, and what came of it.
  * `startSession` takes a `parent` — another conversation, by the agent's own id
@@ -3541,7 +3572,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "3.7.0";
+export declare const SYNC_API_VERSION: "3.8.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
