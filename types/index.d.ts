@@ -285,6 +285,24 @@ export declare const buttonVariants: (props?: ({
 } & ClassProp) | undefined) => string;
 
 /**
+ * What the machine this window is running on can actually do.
+ *
+ * The list to read before degrading, and the one that has to be true rather
+ * than complete: [`SYNC_CAPABILITIES`] says what this surface publishes, and on
+ * a phone four of those names have nothing behind them.
+ *
+ * A function rather than a constant, and the reason is where the answer comes
+ * from: `device()` reads a global the phone's application writes in a script
+ * that runs before the document is parsed, and a constant would freeze whatever
+ * was true when this module happened to be evaluated — including during the
+ * static export, where there is no window at all and the honest answer is
+ * "a computer, for now". A window does not move from one machine to another, so
+ * the answer does not change once anything can read it; asking each time is
+ * what keeps the one moment before that from being written down.
+ */
+export declare function capabilitiesHere(): readonly SyncCapability[];
+
+/**
  * Ask for files to attach with the system's open panel.
  *
  * What comes back is absolute and stays absolute. A path in a record is made
@@ -777,11 +795,17 @@ export declare function explain(failure: unknown): string;
  * `vault` is the same shape again and the reason is sharper: an id in the
  * argument list would be one package spelling another's namespace, which is the
  * whole of what a namespace is for.
+ *
+ * `terminal` is the third, and the widest of them: what it opens runs whatever
+ * a person types in the folder they opened it in. It is attributed for the same
+ * reason as the other two — the capability is read off the manifest on this
+ * machine when a terminal is opened, and a package cannot state its own.
  */
 export declare interface ExtensionHost {
     readonly id: string;
     readonly net: ExtensionNet;
     readonly vault: ExtensionVault;
+    readonly terminal: ExtensionTerminal;
 }
 
 /**
@@ -814,6 +838,55 @@ export declare interface ExtensionNet {
      * allowed, a response too large to read, or no network at all.
      */
     fetch(request: NetRequest): Promise<NetResponse>;
+}
+
+/**
+ * A shell, in a folder, with a screen somewhere else.
+ *
+ * The two halves fail differently and are kept apart for that reason: the
+ * process is held by the application and survives anything the window does to
+ * itself, and the screen is drawn, hidden, resized and thrown away without the
+ * process noticing. Nothing here draws.
+ *
+ * Handed over already attributed, as `net` and `vault` are: opening one is
+ * checked against the manifest on this machine, so the call has to carry which
+ * package is making it rather than state it.
+ *
+ * **A terminal belongs to the project, not to the section that opened it.** An
+ * area can be left, hidden or reloaded, and none of those is a reason for a
+ * build to stop; closing the project is what ends them.
+ */
+export declare interface ExtensionTerminal {
+    /** Raise one, and answer with the name it will be known by. */
+    open(opening: TerminalOpening): Promise<string>;
+    /** What was typed, on its way to the process. */
+    write(terminal: string, data: string): Promise<void>;
+    /**
+     * Tell the far end the screen changed size.
+     *
+     * Not decoration: this is what raises the signal a full-screen program
+     * redraws itself on, so a screen that resizes without saying so stays wrapped
+     * to a width that is gone.
+     */
+    resize(terminal: string, size: TerminalSize): Promise<void>;
+    /**
+     * Watch one from an offset: everything since, then everything after.
+     *
+     * `0` is from the beginning of what is still kept. What a screen that has
+     * been drawing already passes is the `to` of the last output it took, so
+     * re-attaching after a reload costs one message rather than a repeat.
+     *
+     * **One screen at a time.** Watching a terminal retires whoever was watching
+     * it, which is what a terminal is everywhere else and what stops a section
+     * that re-attaches from leaving its previous watcher behind.
+     */
+    watch(terminal: string, from: number, onEvent: (event: TerminalEvent) => void): Promise<void>;
+    /** What a project has open. */
+    list(project: string): Promise<readonly TerminalRow[]>;
+    /** End one. */
+    close(terminal: string): Promise<void>;
+    /** End everything a project has open. */
+    closeProject(project: string): Promise<void>;
 }
 
 /**
@@ -2169,6 +2242,15 @@ export declare function RecordRemovalSheet({ open, onOpenChange, record, types, 
  * arrives in exactly one situation — a package built against a newer host —
  * and treating it as satisfied would run an extension that asked for something
  * and did not get it, which fails later and somewhere else.
+ *
+ * A capability this build knows and *this machine* does not keep is not
+ * refused here, and the difference is the whole reason there are two functions.
+ * This one answers whether a package belongs in a project at all — a project is
+ * one repository open on several machines, and a phone that refused to install
+ * a package its owner's computer runs perfectly would be deciding for the
+ * computer. What the machine in front of somebody cannot do is
+ * [`unavailableHere`], and its answer greys a section out rather than
+ * withdrawing an extension from the project.
  */
 export declare function refuseIncompatible(required: ApiRequirement): string | null;
 
@@ -2723,9 +2805,14 @@ export declare type SessionStatus =
 /** A turn is running. */
 | "working"
 /**
-* A turn has been said into it and is waiting its turn to run. What a
-* conversation delegated from one that already has a delegated run under it
-* says until that one is finished.
+* A turn has been said into a conversation and has not started.
+*
+* **Nothing in this build reports it.** A delegated turn starts when it is
+* ordered, however many are already going under the same conversation:
+* they share one working tree, and whose tree it is answers who decides
+* (`src-tauri/src/work/delegated.rs`). The member is kept rather than
+* dropped because dropping something a status can be is a major, and the
+* number would go on a word instead of on anything a package can be handed.
 */
 | "queued"
 /** Stopped on a question only a person can answer. */
@@ -2862,6 +2949,19 @@ export declare interface SourceListItem {
     } | {
         readonly kind: "dot";
     };
+    /**
+     * What the secondary button offers over this row, or nothing where the row
+     * answers to no commands.
+     *
+     * A thunk rather than a list, and built when the menu is asked for: by then
+     * the row may stand for something that has changed since it was drawn, and a
+     * menu made at render would act on what was on screen rather than on what is
+     * there now. The same shape [`SourceTree`] gives its own rows, because a
+     * secondary click on a row means one thing in this window whichever of the
+     * two controls drew it — and a gesture that works in one column and dies in
+     * the next teaches nobody where a command lives.
+     */
+    readonly menu?: () => readonly NativeMenuEntry[];
 }
 
 export declare function SourceTree({ label, items, rootId, activeId, expanded, onSelect, onExpandedChange, indent, }: {
@@ -3043,6 +3143,48 @@ export declare function supportsApiRange(range: string): boolean;
  * promised", which would be true of the code and false of the intent: the whole
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
+ *
+ * **3.10.0** is the same surface on two machines. `capabilitiesHere` is what
+ * this *machine* honours, as against what the build publishes, and
+ * `unavailableHere` says in a sentence why a package that is otherwise fine
+ * does nothing on it. Two additions, so a minor, and every package stating
+ * `^3.0` goes on installing.
+ *
+ * What forced it is that one static export is now shown by two applications.
+ * The phone raises no session, keeps no keychain of its own, opens no shell and
+ * has no system menu, and `SYNC_CAPABILITIES` goes on naming all four because
+ * it is the build's list and the build is both. A package that degrades rather
+ * than refusing asks the new function; a manifest is still checked against the
+ * old one, because what a manifest is checked against is a project, and a
+ * project is one repository open on more than one machine.
+ *
+ * It is also where `SessionStatus` stops being reported in full. A
+ * conversation's delegated runs each start when they are ordered, so a first
+ * turn that is recorded and not yet going no longer happens and `queued` is
+ * never sent. The member stays in the union: dropping it is a major by the
+ * table above, and that number would be spent on a word no package can be
+ * handed while every manifest stating `^3.0` stopped installing.
+ *
+ * **3.9.0** is a shell in a folder. `ExtensionHost` carries a `terminal`
+ * beside `net` and `vault`, and `terminal` joins the capabilities. An addition,
+ * so a minor, and every package stating `^3.0` goes on installing.
+ *
+ * It is the third thing handed over already attributed, and the widest: what it
+ * opens runs whatever a person types. Attribution is what the other two are
+ * for as well, but here it is the whole of the agreement — a package cannot
+ * state its own permission, so opening one is checked against the manifest on
+ * this machine and the id is closed over by the host.
+ *
+ * The screen is not here and will not be. What the window is handed is bytes
+ * with an offset on them; drawing them is the package's, and the process
+ * outlives every screen that ever drew it.
+ *
+ * `SourceListItem` gains a `menu` under the same number, and it is the other
+ * half of what 3.8.0 started: the two source lists are twins by intent, and a
+ * secondary click that opened commands on a nested row and did nothing on a
+ * flat one taught nobody where a command lives. The same thunk the tree takes,
+ * for the same reason — a menu built at render acts on the row as it stood
+ * rather than as it stands.
  *
  * **3.8.0** gives `SourceTreeItem` an `emphasised`, so a row of a tree can say
  * that it is waiting on the person reading the column. An addition, so a minor
@@ -3572,7 +3714,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "3.8.0";
+export declare const SYNC_API_VERSION: "3.10.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
@@ -3586,8 +3728,18 @@ export declare const SYNC_API_VERSION: "3.8.0";
  * So a capability is a promise about behaviour, named, and a manifest may
  * require one. Reading whether one is present is allowed too — an extension
  * that degrades deliberately is doing something better than refusing.
+ *
+ * **The build is not the machine, and this list is the build's.** One static
+ * export is shown by two applications now, and the phone keeps four of these
+ * promises with nothing behind them. So a name here means the surface publishes
+ * it and a manifest may state it; whether the machine in front of somebody
+ * honours it is [`capabilitiesHere`], and that is the one to read before
+ * degrading. The two are kept apart rather than merged because a manifest is
+ * checked against a *project*, which is one repository open on more than one
+ * machine: a phone that refused a package its owner's computer runs would be
+ * deciding for the computer.
  */
-export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets", "net", "net.write", "vault", "background", "schedule", "work.agent", "agent.tools"];
+export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets", "net", "net.write", "vault", "background", "schedule", "work.agent", "agent.tools", "terminal"];
 
 export declare type SyncCapability = (typeof SYNC_CAPABILITIES)[number];
 
@@ -3603,6 +3755,62 @@ export declare interface TableCommands {
 }
 
 export declare const TableCommandsProvider: Provider<(commands: TableCommands | null) => void>;
+
+/**
+ * What a watcher is told, as it happens.
+ *
+ * Output arrives base64-encoded rather than as text, and that is not an
+ * encoding choice made for tidiness: a chunk can end in the middle of a
+ * character, and decoding it as text would replace the tail with a
+ * substitution mark the next chunk cannot repair. Decode it to bytes and hand
+ * those to whatever draws the screen.
+ */
+export declare type TerminalEvent = {
+    readonly kind: "output";
+    readonly from: number;
+    readonly to: number;
+    /**
+     * Bytes were dropped between what was asked for and what came back.
+     *
+     * Said rather than smoothed over. What to draw after a gap is the
+     * caller's decision — most screens are better off cleared than left
+     * showing half of something.
+     */
+    readonly gapped: boolean;
+    readonly base64: string;
+} | {
+    readonly kind: "ended";
+    readonly code: number;
+    readonly signal: string | null;
+} | {
+    readonly kind: "gone";
+};
+
+/** What to open, and where. */
+export declare interface TerminalOpening {
+    /** The project the terminal belongs to, and what closing it closes. */
+    readonly project: string;
+    /** The folder the shell starts in. Refused when it is not one. */
+    readonly cwd: string;
+    readonly size: TerminalSize;
+}
+
+/** One terminal a project has open. */
+export declare interface TerminalRow {
+    readonly id: string;
+    readonly owner: string;
+    /** How the process finished, or absent while it is still running. */
+    readonly exit?: {
+        readonly code: number;
+        readonly signal: string | null;
+    };
+}
+
+/** How large a terminal's screen is, in cells. */
+export declare interface TerminalSize {
+    readonly rows: number;
+    readonly cols: number;
+}
 
 /** One tool an extension offers an agent, as the project records it. */
 export declare interface ToolDeclaration {
@@ -3831,6 +4039,32 @@ export declare interface TypeStorage {
     /** The directory, relative to the repository root. Absent for a type whose bodies are records. */
     readonly folder?: string | null;
 }
+
+/**
+ * Why an extension does nothing on *this* machine, in one sentence, or `null`.
+ *
+ * The second half of compatibility, and a different question from
+ * [`refuseIncompatible`]: that one is about a package and a surface, and this
+ * is about a package and the machine somebody is holding. A package asking for
+ * a shell is a fine package, correctly installed, in a project that runs it on
+ * a computer — and on a phone it is a section that would mount and then fail at
+ * the first thing it tried to do.
+ *
+ * So it is asked before anything of the package runs, and what it produces is a
+ * row drawn but not offered rather than a package withdrawn. The distinction is
+ * what a person sees: *this is part of your project, and not from here* is
+ * true, where a missing row would say the project had changed and a red line
+ * would say something had broken.
+ *
+ * It answers for [`NOTHING_RUNS_WITHOUT`] and not for every promise this
+ * machine fails to keep, and the difference is the whole of the judgement in
+ * this file. Most packages name a capability for one part of what they do —
+ * almost every one of them asks for `native-menu` — and greying a section out
+ * because a menu will not open would leave a phone with nothing on it and no
+ * honest reason. A package deliberately degrading asks [`capabilitiesHere`]
+ * instead, which reports every one of them.
+ */
+export declare function unavailableHere(required: ApiRequirement): string | null;
 
 /**
  * The files a scan could not attribute to a record, and the question they ask.
