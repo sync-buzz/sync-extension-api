@@ -1,5 +1,5 @@
 {
-  "version": "3.10.0",
+  "version": "3.15.0",
   "values": [
     "ATTENTION_STATES",
     "Button",
@@ -62,6 +62,7 @@
     "TypeRemovalSheet",
     "TypeSheet",
     "UnmatchedFiles",
+    "VirtualList",
     "WorktreeError",
     "absenceLabel",
     "adoptWorktree",
@@ -75,6 +76,7 @@
     "deleteMemoryFolder",
     "deleteSession",
     "describeMemoryFolder",
+    "desktop",
     "discardWorktree",
     "explain",
     "foldTranscript",
@@ -90,12 +92,15 @@
     "modelOption",
     "moveMemoryDocument",
     "parentFolder",
+    "precede",
     "projectRemote",
     "refuseIncompatible",
     "rememberedConversations",
     "renameMemoryFolder",
     "renameSession",
     "resumeSession",
+    "revealDocument",
+    "revealLabel",
     "saveSessionImage",
     "sessionBacklog",
     "sessionImage",
@@ -116,10 +121,12 @@
     "useDocument",
     "useDragHandle",
     "useFolders",
+    "useListEnd",
     "useLiveSessions",
     "useOpenRecord",
     "useProjectView",
     "withDropped",
+    "withEarlier",
     "worktreesIn"
   ]
 }
