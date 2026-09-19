@@ -1279,6 +1279,18 @@ export declare interface InstalledExtension {
      */
     readonly name: string;
     /**
+     * The icon name the manifest gave, as the window reads it on install.
+     *
+     * A string naming an icon from the shared library, resolved by the reader
+     * through `kindIcon`. Here for the same reason `name` is: the record
+     * travels with the repository, and an area drawing the project's
+     * extensions has nowhere else to read the icon from.
+     *
+     * Empty for a record written before the field existed, which is filled on
+     * the next open rather than treated as a failure.
+     */
+    readonly icon: string;
+    /**
      * The version that was installed, not the one available now. An extension
      * that has moved on is something the window can notice and say.
      */
@@ -3525,6 +3537,14 @@ export declare function supportsApiRange(range: string): boolean;
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
  *
+ * **3.23.0** gives `InstalledExtension` an `icon`. The icon name the
+ * manifest gave is now on the record, for the same reason `name` is: the
+ * record travels with the repository, and an area drawing the project's
+ * extensions has nowhere else to read the icon from. A string naming an
+ * icon from the shared library, resolved by the reader through `kindIcon`.
+ * An optional field added, so a minor, and every package stating `^3.0`
+ * goes on installing.
+ *
  * **3.22.0** gives `InstalledExtension` a `name`. The display name the
  * manifest gave is now on the record, for the same reason `prompt` and
  * `tools` are: the record travels with the repository, and an area
@@ -4290,7 +4310,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "3.22.0";
+export declare const SYNC_API_VERSION: "3.23.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
