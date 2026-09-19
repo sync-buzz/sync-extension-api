@@ -717,6 +717,42 @@ export declare function DropdownMenuSubTrigger({ className, inset, children, ...
 
 export declare function DropdownMenuTrigger({ ...props }: React_2.ComponentProps<typeof DropdownMenu_2.Trigger>): React_2.JSX.Element;
 
+/**
+ * How long ago something was, for a list somebody is scanning.
+ *
+ * *Just now* and *3 days ago* are what a column of events is for — is this
+ * still in use, has this been sitting here since Friday — and an exact
+ * timestamp answers neither without arithmetic. A date is the other question
+ * and a different function: *which one did I set up at the office* is looked
+ * up, not scanned.
+ *
+ * Shared rather than kept beside the first screen that wanted it, because the
+ * second one wants exactly the same sentences: two copies of this drift the
+ * first time somebody decides an hour should read as `1 h` in one column and
+ * `an hour` in the next. That is also why it is on the extension surface. A
+ * package holds moments of two kinds — the engine's, and the ones it wrote
+ * itself — and had no way to word either, so every one of them would have
+ * arrived at its own ladder and the window would have spoken several dialects
+ * of the same sentence.
+ *
+ * **Two spellings of a moment, because a package has both.** The engine answers
+ * in seconds since the epoch, and a package's own field holds a moment as
+ * ISO 8601 text — there is no moment among the field types, so a type that
+ * records when something was copied records a string. Taking only the number
+ * would leave every such package converting, and the conversion has two silent
+ * ways to go wrong: milliseconds passed as seconds read as the far future and
+ * say *Just now* about everything, and text that will not parse becomes `NaN`
+ * and reads as *NaN days ago* on somebody's screen. Both are wrong in a way
+ * nothing reports, so both are decided here instead.
+ *
+ * Anything this cannot read as a moment is *Never*, which is also what nothing
+ * at all answers. That is the honest reading of the only case it happens in: a
+ * record carrying no moment this can make sense of is a record with nothing to
+ * say about when, and a sentence invented for it would be a guess in the one
+ * place a person came to for a fact.
+ */
+export declare function elapsed(when: number | string | null | undefined): string;
+
 export declare const EMPTY_TRANSCRIPT: Transcript;
 
 /** A typed relation to another entity, by key. */
@@ -862,12 +898,19 @@ export declare function explain(failure: unknown): string;
  * a person types in the folder they opened it in. It is attributed for the same
  * reason as the other two — the capability is read off the manifest on this
  * machine when a terminal is opened, and a package cannot state its own.
+ *
+ * `tools` is the fourth and the narrowest, and it is attributed for a reason
+ * the other three do not have as sharply: the agreement it is checked against
+ * is about *this package* asking, and the answer to whether it may is going to
+ * get narrower rather than wider. An id in the argument list would be a package
+ * asking under somebody else's name.
  */
 export declare interface ExtensionHost {
     readonly id: string;
     readonly net: ExtensionNet;
     readonly vault: ExtensionVault;
     readonly terminal: ExtensionTerminal;
+    readonly tools: ExtensionTools;
 }
 
 /**
@@ -949,6 +992,48 @@ export declare interface ExtensionTerminal {
     close(terminal: string): Promise<void>;
     /** End everything a project has open. */
     closeProject(project: string): Promise<void>;
+}
+
+/**
+ * The tools the person already has, asked one at a time.
+ *
+ * **This is not a way onto the network.** It reaches exactly the servers that
+ * person configured in their own agent, through that agent, and a package
+ * cannot add one, name one that is not there, or learn what the list holds.
+ * Where `net` is a package reaching somewhere its own manifest names, this is a
+ * package asking something the person has already set up and authorised — which
+ * is why it is a separate agreement and why a package that has this one still
+ * reaches no host it did not declare.
+ *
+ * Handed over already attributed, as `net`, `vault` and `terminal` are: whether
+ * a package may do this is read off the manifest on this machine, so the call
+ * carries which package is making it rather than stating it.
+ *
+ * **The answer is the tool's own, never an account of it.** A turn in which the
+ * carrier talked about the tool instead of calling it rejects by name; it does
+ * not resolve with prose. That distinction is the whole reason this exists
+ * rather than a prompt: a panel filled from a summary looks like a working
+ * panel, which makes it worse than an empty one.
+ *
+ * **It is not a render path.** Every call costs tokens and seconds, and it can
+ * only answer while the agent carrying it is running and signed in. What a
+ * panel draws is what is in the project's memory; this is how that gets there.
+ * A section that called this to paint itself would be a section that is blank
+ * on a train.
+ */
+export declare interface ExtensionTools {
+    /**
+     * Ask one tool, and answer with the JSON it returned.
+     *
+     * Rejects with a named refusal rather than a sentence, so a panel can tell
+     * *nobody has chosen an agent to work through* from *the tool asked for
+     * permission and nobody was there to give it* and say something different
+     * about each.
+     *
+     * @param project The project the ask is made in. A tool that reads a
+     *   repository reads this one.
+     */
+    call(project: string, ask: ToolAsk): Promise<unknown>;
 }
 
 /**
@@ -1182,6 +1267,18 @@ export declare function imageFileName(mimeType: string, called?: string): string
 export declare interface InstalledExtension {
     readonly id: string;
     /**
+     * The display name the manifest gave, as the window reads it on install.
+     *
+     * Here rather than only in the build for the same reason `prompt` is: the
+     * record travels with the repository, and an area drawing the project's
+     * extensions has nowhere else to read the name from. Written on install
+     * and rewritten whenever this build's name and the stored one disagree.
+     *
+     * Empty for a record written before the field existed, which is filled on
+     * the next open rather than treated as a failure.
+     */
+    readonly name: string;
+    /**
      * The version that was installed, not the one available now. An extension
      * that has moved on is something the window can notice and say.
      */
@@ -1228,6 +1325,15 @@ export declare interface InstalledExtension {
      * Absent for an extension that offers none, which is most of them.
      */
     readonly tools?: readonly ToolDeclaration[];
+    /**
+     * The portable settings values, as the project stores them.
+     *
+     * Only the fields marked `sync:portable` in the extension's settings schema.
+     * Local values are this machine's and live in app config, not in the
+     * project's memory. Absent for an extension that declares no settings,
+     * which is most of them.
+     */
+    readonly settings?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -2728,6 +2834,8 @@ export declare type SessionEvent = {
     readonly atMs: number;
     readonly status: SessionStatus;
     readonly detail: string | null;
+    /** Whether this arrived as backlog on subscription, not from a live turn. */
+    readonly replayed?: boolean;
 } | {
     /**
      * What a person said. Recorded by the host rather than by the protocol:
@@ -2988,6 +3096,43 @@ export declare type SessionStatus =
 | "failed";
 
 /**
+ * What a mounted area reads and writes of its own settings.
+ *
+ * The schema lives in the manifest; the host reads it, renders the form, and
+ * routes each value to the store its field declares. An extension reads the
+ * merged result and asks for the sheet to open — it does not draw the form,
+ * because a form drawn by every extension is a standard held by none.
+ *
+ * `values` is `null` while the host reads, not empty: an extension that asked
+ * for a setting and has not been answered is not the same as one that was
+ * answered with nothing. `set` writes one field; the host decides where it
+ * goes from the schema, so the extension does not know which of its values
+ * travel with the project and which stay on this machine. `open` raises the
+ * sheet the host renders from the schema — the same form, reached from the
+ * area's own context rather than from a window that does not know which
+ * project is open.
+ */
+export declare interface SettingsHandle {
+    readonly values: Readonly<Record<string, unknown>> | null;
+    readonly set: (key: string, value: unknown) => void;
+    readonly open: () => void;
+}
+
+/**
+ * Publishes the settings handle for one area's subtree.
+ *
+ * Wrapped around the whole of a layer — the provider and the columns —
+ * because an area is as likely to hold a setting in its provider as in a
+ * column. The layers nest, so this also encloses every area visited after
+ * this one; it is not a leak, because each of those opens a scope of its own
+ * before it renders anything of its own, and the nearer one wins.
+ */
+export declare function SettingsScope({ handle, children, }: {
+    handle: SettingsHandle;
+    children: ReactNode;
+}): JSX.Element;
+
+/**
  * A sheet: a modal that belongs to this window and to nothing else.
  *
  * macOS attaches this kind of modal to the window it acts on rather than
@@ -3038,13 +3183,27 @@ export declare function SourceList({ label, items, activeId, rail, onSelect, onR
      * The rows were put in this order, and the list may be rearranged at all.
      *
      * Absent means the order is not the reader's to decide, which is the honest
-     * state of a list of two fixed screens. What is handed over is every id in
+     * state of a list of fixed screens. What is handed over is every id in
      * its new order rather than the one that moved: whoever stores an
      * arrangement stores the whole of it, and a pair of indices would make them
      * re-derive what this list already worked out.
      */
     onReorder?: (ids: readonly string[]) => void;
 }): JSX.Element;
+
+/**
+ * One part of a row's screen, in the column.
+ *
+ * A name and nothing else. It carries no icon of its own: the mark for what
+ * this is about is already on the row above it, and a second mark indented
+ * under the first would be two things claiming to say what one row is — which
+ * is the reading that makes a two-level column feel like two lists. Position
+ * says the rest.
+ */
+export declare interface SourceListChild {
+    readonly id: string;
+    readonly label: string;
+}
 
 /**
  * A macOS source list: the column that answers "where am I".
@@ -3061,8 +3220,16 @@ export declare function SourceList({ label, items, activeId, rail, onSelect, onR
  *
  * **Rows can be rearranged where rearranging them means something**, which is
  * the sections of a project and not the sections of the settings window: the
- * first list is a place somebody works in every day and the second is two
- * fixed screens. That is `onReorder`, and a list without it drags nowhere.
+ * first list is a place somebody works in every day and the second is a fixed
+ * set of screens. That is `onReorder`, and a list without it drags nowhere.
+ *
+ * **It reads in one level or in two, and in one run or in several.** A row may
+ * name the parts of its own screen, and a run of rows may carry a heading. Both
+ * exist for the same reason: a column of nine is nine things to hold at once,
+ * and a section whose screen is three screenfuls stacked needs a way into one
+ * of them that is not scrolling past the other two. Neither is drawn for a list
+ * that asks for neither, so the column that folds to a rail beside a project
+ * and the column beside the settings are still the one control.
  *
  * The gesture is the one macOS uses in Finder's sidebar and Mail's mailbox
  * list, and it is not the one the web usually reaches for. **The rows do not
@@ -3141,6 +3308,41 @@ export declare interface SourceListItem {
      * discovered by trying, once, and that is the whole of the feedback it needs.
      */
     readonly fixed?: boolean;
+    /**
+     * The run of the list this row is read in, or nothing for a list read in one.
+     *
+     * A heading is drawn wherever this differs from the row above, so the runs
+     * are wherever the rows say they are rather than a second structure to keep
+     * in step with the order. It is a heading and never a row: nothing selects
+     * it, and a list whose bands could be selected would have two kinds of thing
+     * answering "where am I".
+     *
+     * Bands and [`SourceList.onReorder`] are never both in play. What a band
+     * means is that the order was decided, and a list somebody rearranges is one
+     * where it was not.
+     */
+    readonly band?: string;
+    /**
+     * The parts of this row's screen that are each worth a row of their own.
+     *
+     * A row earns these only where its screen is several screenfuls stacked: the
+     * column is then how you reach one without reading past the others. A row
+     * whose parts are a line of options each has none, because a second level
+     * naming things that were never hard to find costs the column its ability to
+     * say which rows are large.
+     *
+     * **A row with parts stops being a place itself.** Selecting it selects the
+     * first of them, and the row says so by lighting rather than by taking the
+     * selected surface. A row that were both would be two kinds of destination
+     * drawn as one — a screen holding every part, three inches above the parts
+     * themselves, each of which is the same screen with two thirds removed. The
+     * parts are the places; the row is which of them you are in.
+     *
+     * They are always drawn. There is no triangle, because there is no state a
+     * folded row could be in: fold one holding the selection and the window is
+     * left showing a screen that nothing in the column points at.
+     */
+    readonly children?: readonly SourceListChild[];
 }
 
 export declare function SourceTree({ label, items, rootId, activeId, expanded, onSelect, onExpandedChange, indent, }: {
@@ -3322,6 +3524,89 @@ export declare function supportsApiRange(range: string): boolean;
  * promised", which would be true of the code and false of the intent: the whole
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
+ *
+ * **3.22.0** gives `InstalledExtension` a `name`. The display name the
+ * manifest gave is now on the record, for the same reason `prompt` and
+ * `tools` are: the record travels with the repository, and an area
+ * drawing the project's extensions — their names as the catalogue shows
+ * them — has nowhere else to read the name from. The manifest is on this
+ * machine; the project is what a colleague clones. An optional field
+ * added, so a minor, and every package stating `^3.0` goes on installing.
+ *
+ * **3.19.0** is a column that reads in two levels and in several runs.
+ * `SourceListItem` gains `band` and `children`, and `SourceListChild` is the
+ * name of what the second holds — additions, so a minor, and every package
+ * stating `^3.0` goes on installing.
+ *
+ * Both answer the same failure, which is a column that has grown past what a
+ * person takes in at a glance. A flat run of nine is nine things held at once;
+ * a row whose screen is three screenfuls stacked can only be read by scrolling
+ * past the parts nobody came for. The window hit both in its own settings
+ * before any package did, and the fix belongs in the control rather than beside
+ * it: a package that solved this for itself would have built a second column
+ * next to the one it was given, and the two would have disagreed about what a
+ * selected row looks like.
+ *
+ * A row that declares children stops being a place itself: choosing it chooses
+ * the first of them, and it shows that by lighting rather than by taking the
+ * selected surface. That is the part to copy rather than work around. A row
+ * that were also a screen would be a screen holding every part sitting three
+ * inches above those parts, each of which is the same screen with the rest
+ * removed — two kinds of destination drawn identically, in the one column whose
+ * whole job is saying where you are. Nothing is drawn for a list that declares
+ * neither member, so a column that was right as one flat run is untouched,
+ * byte for byte.
+ *
+ * **3.18.0** is a package able to say how old what it is showing is. `elapsed`
+ * is added — one function, so a minor, and every package stating `^3.0` goes on
+ * installing.
+ *
+ * The window has always had exactly one ladder of sentences for this — *Just
+ * now*, *4 min ago*, *Yesterday* — and a package had none, while carrying two
+ * kinds of moment it might want to draw: the engine's, since 3.13, and any it
+ * wrote into a field of its own. So the choice was never between one wording
+ * and none; it was between one wording and one per package, arrived at
+ * separately by authors who never see each other's column. That is the same
+ * argument the component surface rests on, applied to a sentence instead of to
+ * markup.
+ *
+ * It takes both spellings of a moment, and that is the part worth defending
+ * rather than an accommodation. The engine answers in seconds; a package's own
+ * field holds ISO 8601 text, because there is no moment among the field types
+ * and a type recording when something was copied records a string. Leaving the
+ * conversion to each package leaves two failures that report nothing:
+ * milliseconds handed over as seconds read as the far future and say *Just now*
+ * about everything, and text that will not parse arrives as `NaN` and reads as
+ * *NaN days ago*. A door that accepts what its callers actually hold has
+ * neither.
+ *
+ * A date is still not on the surface. *How current is this* and *which one did
+ * I set up at the office* are different questions, and the second one is looked
+ * up rather than scanned.
+ *
+ * **3.17.0** is a package asking one of the person's own tools something.
+ * `ExtensionHost` gains `tools`, and `ExtensionTools` and `ToolAsk` join the
+ * surface beside it — additions, so a minor, and every package stating `^3.0`
+ * goes on installing. The capability `tools.call` arrives with them.
+ *
+ * What it opens is deliberately not the network. A package holding it reaches
+ * the servers that person already configured in their own agent, through that
+ * agent, and cannot add one or find out what the list holds; a package holding
+ * `net` still cannot ask a tool anything. The two are separate agreements
+ * because they are separate questions — *where may this reach* and *may this
+ * spend a turn of my agent* — and a card that folded them would be asking one
+ * and answering both.
+ *
+ * The ask is spelled in the far end's words — a server, a tool, its arguments —
+ * with nothing in it about the carrier. That is the one part of the shape worth
+ * defending: what carries an ask today is a turn of a chosen agent, and a
+ * request naming a session and a prompt would make replacing that carrier a
+ * rebuild of every package ever written against this.
+ *
+ * It is not a render path, and the surface says so where an author reads it. A
+ * panel draws what is in the project's memory; this is how what a tool returned
+ * gets there. A section that asked on every render would cost tokens to open
+ * and be blank on a train.
  *
  * **3.16.0** is a list cut by tag. `MemorySelection` gains `tags`, one optional
  * member, so a minor and every package stating `^3.0` goes on installing.
@@ -4005,7 +4290,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "3.16.0";
+export declare const SYNC_API_VERSION: "3.22.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
@@ -4030,7 +4315,7 @@ export declare const SYNC_API_VERSION: "3.16.0";
  * machine: a phone that refused a package its owner's computer runs would be
  * deciding for the computer.
  */
-export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets", "net", "net.write", "vault", "background", "schedule", "work.agent", "agent.tools", "terminal"];
+export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets", "net", "net.write", "vault", "background", "schedule", "work.agent", "agent.tools", "terminal", "tools.call"];
 
 export declare type SyncCapability = (typeof SYNC_CAPABILITIES)[number];
 
@@ -4101,6 +4386,43 @@ export declare interface TerminalRow {
 export declare interface TerminalSize {
     readonly rows: number;
     readonly cols: number;
+}
+
+/**
+ * What a package asks one of the person's own tools for.
+ *
+ * Three members, and none of them about how the asking is done. The vocabulary
+ * is the far end's — an MCP server as that person's own configuration keys it,
+ * a tool as that server publishes it, and whatever arguments the tool takes.
+ *
+ * That is deliberate rather than terse. Something has to carry the ask, and
+ * what carries it today is a turn of the agent this installation works
+ * through — the only route to those tools that needs no credential of anybody's
+ * and opens no second connection. It costs a turn's worth of tokens and a wait
+ * on every call. Spelling the request in the carrier's words instead, with a
+ * session and a prompt in it, would make replacing the carrier a change to
+ * every package ever built against this. Spelled in the far end's words, it
+ * survives the carrier being replaced without a single package being rebuilt.
+ */
+export declare interface ToolAsk {
+    /** The MCP server, keyed as the person's own configuration keys it. */
+    readonly server: string;
+    /**
+     * The tool, as that server publishes it.
+     *
+     * Not the spelling any particular agent uses for it: one tool of one server
+     * is written several different ways across the agents this build can raise,
+     * and rendering it for whichever one is carrying the ask happens below this
+     * line, where the choice is known.
+     */
+    readonly tool: string;
+    /**
+     * Passed through untouched. What a tool takes is the tool's business, and a
+     * copy of its schema kept here would be an older one.
+     *
+     * Left out means a tool that takes nothing, which MCP spells `{}`.
+     */
+    readonly arguments?: unknown;
 }
 
 /** One tool an extension offers an agent, as the project records it. */
@@ -4610,6 +4932,16 @@ export declare function useOpenRecord(): ((record: {
 }) => void) | null;
 
 export declare function useProjectView(projectPath: string): ProjectViewState;
+
+/**
+ * Read and write this area's own settings, from inside the area.
+ *
+ * Returns a [`SettingsHandle`] — `values` for the merged settings (portable
+ * and local), `set` to write one field, `open` to raise the sheet the host
+ * renders from the schema. Outside a window the handle is inert: `values` is
+ * `null`, `set` and `open` do nothing.
+ */
+export declare function useSettings(): SettingsHandle;
 
 export declare function VirtualList<T>({ items, keyOf, children, header, footer, follow, onStart, onAtEndChange, handle, className, label, }: VirtualListProps<T>): JSX.Element;
 

@@ -46,6 +46,7 @@
   --color-panel: var(--surface-panel);
   --color-workspace: var(--surface-workspace);
   --color-raised: var(--surface-raised);
+  --color-console: var(--surface-console);
 
   --color-fg: var(--text-primary);
   --color-fg-secondary: var(--text-secondary);

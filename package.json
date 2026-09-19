@@ -1,6 +1,6 @@
 {
   "name": "@sync-buzz/extension-api",
-  "version": "3.16.0",
+  "version": "3.22.0",
   "description": "The contract an extension for Sync is written against, and the tools that hold it to it.",
   "license": "MIT",
   "homepage": "https://sync.buzz",
