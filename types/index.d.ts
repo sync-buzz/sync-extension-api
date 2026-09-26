@@ -297,6 +297,22 @@ export declare const buttonVariants: (props?: ({
 } & ClassProp) | undefined) => string;
 
 /**
+ * Runs the handler an extension declares for an occasion, and answers what it
+ * returned.
+ *
+ * `null` says the package declares nothing for this occasion, which is the
+ * usual answer and not a failure. A rejection is the handler's own — it threw,
+ * it ran past its limit, or the manifest and the module disagree — and the
+ * words name the package first, because by the time anybody reads them that is
+ * what they need to know.
+ *
+ * Nothing about the handler crosses this boundary but its answer. It ran in an
+ * isolate in Rust with only what the host handed it, and this window neither
+ * loaded it nor could have.
+ */
+export declare function callExtensionHandler(project: string, id: string, occasion: string, payload: unknown): Promise<unknown>;
+
+/**
  * What the machine this window is running on can actually do.
  *
  * The list to read before degrading, and the one that has to be true rather
@@ -342,12 +358,19 @@ export declare function cn(...inputs: ClassValue[]): string;
  * record open, that is the record: everything *about* it lives here so that the
  * centre can be nothing but the text. With no record open, it is the corpus.
  */
-export declare function ContextInspector({ corpus, open, projectPath, }: {
+export declare function ContextInspector({ corpus, open, projectPath, notes, }: {
     corpus: Corpus;
     /** The record the workspace has open, if it has one. */
     open: OpenDocument | null;
     /** Where the project is, so the panel's open panel opens inside it. */
     projectPath: string;
+    /**
+     * The notes on the open record, as its page reports them, or absent where
+     * notes are not kept. What is true *of* a record is edited above; a note is
+     * about a passage of it, which is why it is a section of its own under that
+     * rather than another field in it.
+     */
+    notes?: NotesOnPage | null;
 }): JSX.Element;
 
 /**
@@ -542,6 +565,14 @@ export declare interface Dependents {
 }
 
 /**
+ * What is stored for a stretch of text somebody selected.
+ *
+ * The quote and its neighbours are cut from the flat text, so they carry no
+ * Markdown and are comparable against a document that has since been saved.
+ */
+export declare function describeAnchor(text: string, start: number, end: number): TextAnchor;
+
+/**
  * The document that *is* a folder: opened if it exists, written if it does not.
  *
  * How a folder gets a title and a text of its own. What comes back is an
@@ -611,6 +642,20 @@ export declare interface DocumentDraft {
 }
 
 /**
+ * One note, as the store holds it.
+ *
+ * `key` is the key of the note's own record, which is what every command here
+ * refers to: closing one, revealing one, saying which one a highlight belongs
+ * to. The body is the note's text, and it is drawn nowhere near the page's own
+ * type scale — a note is a remark about the document, not a paragraph of it.
+ */
+export declare interface DocumentNote {
+    readonly key: string;
+    readonly body: string;
+    readonly anchor: TextAnchor;
+}
+
+/**
  * What an edit of one record changes. Every member is optional and means
  * "replace this"; anything absent is left exactly as the store holds it, which
  * is what lets the panel write a tag while somebody is still typing a paragraph.
@@ -627,6 +672,17 @@ export declare interface DocumentPatch {
     readonly observed?: readonly string[];
     readonly archived?: boolean;
     readonly fields?: Readonly<Record<string, unknown>>;
+}
+
+/** A place in the document, spelled the way the editor spells one. */
+export declare interface DocumentPoint {
+    readonly path: readonly number[];
+    readonly offset: number;
+}
+
+export declare interface DocumentRange {
+    readonly anchor: DocumentPoint;
+    readonly focus: DocumentPoint;
 }
 
 /**
@@ -653,7 +709,7 @@ export declare interface DocumentPatch {
  * round trip through blocks. That is checked by round-tripping it, not guessed
  * at, and the reason is on the page.
  */
-export declare function DocumentView({ open, icon, note, onBack, backLabel, fixed, onArchive, onDelete, justCreated, }: {
+export declare function DocumentView({ open, icon, note, onBack, backLabel, fixed, onArchive, onDelete, justCreated, notes, onNoteWrite, onNoteRewrite, onNoteClose, onNoteMoved, }: {
     open: OpenDocument;
     /** The mark for this record's type, from the published corpus. */
     icon: string | null | undefined;
@@ -674,6 +730,22 @@ export declare function DocumentView({ open, icon, note, onBack, backLabel, fixe
     onDelete: () => void;
     /** True when this record was created a moment ago and still has no name. */
     justCreated?: boolean;
+    /**
+     * The notes on this record, and what may happen to one.
+     *
+     * Passed through to the page, which shades the passages and shows the cards.
+     * All four are absent where notes are not kept, and then this view is exactly
+     * what it was before them — the shell keeps no notes of its own, and what a
+     * note is stored as belongs to whoever opened this view.
+     */
+    notes?: readonly DocumentNote[];
+    onNoteWrite?: (anchor: TextAnchor, body: string) => void;
+    onNoteRewrite?: (key: string, body: string) => void;
+    onNoteClose?: (key: string) => void;
+    onNoteMoved?: (moves: readonly {
+        readonly key: string;
+        readonly anchor: TextAnchor;
+    }[]) => void;
 }): JSX.Element;
 
 export declare function DropdownMenu({ ...props }: React_2.ComponentProps<typeof DropdownMenu_2.Root>): React_2.JSX.Element;
@@ -1293,6 +1365,10 @@ export declare interface InstalledExtension {
     /**
      * The version that was installed, not the one available now. An extension
      * that has moved on is something the window can notice and say.
+     *
+     * Empty for an MCP server, which has a `transport` rather than a package to
+     * version — there is nothing to compare, and an update check treats empty
+     * as *nothing to compare*.
      */
     readonly version: string;
     /**
@@ -1346,6 +1422,15 @@ export declare interface InstalledExtension {
      * which is most of them.
      */
     readonly settings?: Readonly<Record<string, unknown>>;
+    /**
+     * How to reach an MCP server, when this entry is one rather than a package.
+     *
+     * Present turns this entry into an MCP server: the session launcher resolves
+     * it into the `mcp_servers` an agent is given, and a tool call routes it
+     * through Sync's own client. The secrets it names live in the vault under
+     * `mcp-{id}`, not here. Absent for a code package.
+     */
+    readonly transport?: McpTransportConfig;
 }
 
 /**
@@ -1396,6 +1481,40 @@ export declare function KindMark({ icon, className, }: {
     icon: string | null | undefined;
     className?: string;
 }): JSX.Element;
+
+/**
+ * Where this anchor is in the text now, or `null` when it is nowhere.
+ *
+ * Three attempts, in this order, stopping at the first that answers.
+ *
+ * 1. The quote standing at the offset it was stored at, with the same
+ *    neighbours. This is what an untouched document answers, and it costs one
+ *    string comparison.
+ * 2. The quote anywhere in the text, scored by how much of its neighbours it
+ *    kept and broken by distance from where it was. This is the paragraph that
+ *    moved, and the reason the neighbours are stored at all.
+ * 3. An approximate match, allowing a quarter of the quote to differ. This is
+ *    the typo somebody fixed inside the marked words, and it is the only answer
+ *    that comes back with `exact: false`.
+ *
+ * Returning `null` is a real answer rather than a failure: the passage is gone,
+ * and the note that was written about it has to say so instead of being drawn
+ * over words it was never about.
+ */
+export declare function locateAnchor(text: string, anchor: TextAnchor): Located | null;
+
+/**
+ * Where the anchor is now.
+ *
+ * `exact` is false when the quote itself had to be matched approximately —
+ * somebody edited the words under it. The interface says so rather than
+ * pretending the note still sits on what it was written about.
+ */
+export declare interface Located {
+    readonly start: number;
+    readonly end: number;
+    readonly exact: boolean;
+}
 
 /**
  * A reading view for the Markdown a record holds.
@@ -1482,6 +1601,44 @@ export declare interface MarkdownPlugin {
     readonly name: string;
     readonly render: (block: MarkdownBlock) => ReactNode | null;
 }
+
+/** One environment variable an installed MCP stdio transport needs. */
+export declare interface McpEnvSecret {
+    readonly name: string;
+    /** The vault key the value is stored under, as `mcp-{id}/{secret}`. */
+    readonly secret: string;
+}
+
+/** One HTTP header an installed MCP transport sends. */
+export declare interface McpHeaderSecret {
+    readonly name: string;
+    /** The vault key the value is stored under, as `mcp-{id}/{secret}`. */
+    readonly secret: string;
+    /** How the value is prefixed onto the header (`Bearer` is common). */
+    readonly scheme?: string;
+}
+
+/**
+ * How a project declares it reaches an MCP server, as the record carries it.
+ *
+ * The runtime half of the registry's spec: the descriptions a credential
+ * prompt needs are not here, only the secret names and where they live in the
+ * vault.
+ */
+export declare type McpTransportConfig = {
+    readonly type: "stdio";
+    readonly command: string;
+    readonly args?: readonly string[];
+    readonly env?: readonly McpEnvSecret[];
+} | {
+    readonly type: "http";
+    readonly url: string;
+    readonly headers?: readonly McpHeaderSecret[];
+} | {
+    readonly type: "sse";
+    readonly url: string;
+    readonly headers?: readonly McpHeaderSecret[];
+};
 
 /** How much the project holds, by type and by trust. */
 export declare interface MemoryCounts {
@@ -2051,6 +2208,22 @@ export declare interface NetResponse {
 }
 
 /**
+ * What the open record's notes are, for the column beside it.
+ *
+ * `reveal` scrolls the page to a note's passage and opens its card, which is
+ * what a row in that column does when it is chosen. A note with no passage left
+ * has nothing to scroll to, and the row says so instead of moving the page.
+ */
+export declare interface NotesOnPage {
+    readonly placed: readonly PlacedNote[];
+    readonly active: string | null;
+    readonly reveal: (key: string) => void;
+    readonly close: (key: string) => void;
+}
+
+export declare const NotesProvider: Provider<(page: NotesOnPage | null) => void>;
+
+/**
  * The record the window has open, read whole and written back as it is edited.
  *
  * Separate from the list it was opened from: a row carries what a row is scanned
@@ -2272,6 +2445,29 @@ export declare interface PermissionRequest {
             readonly message?: string;
         };
     };
+}
+
+/**
+ * A note and the passage it covers today.
+ *
+ * `at` is `null` for a note whose passage is gone. That is a state with a place
+ * in the interface rather than a note to drop: somebody wrote it about words
+ * that are no longer there, and they are usually not the person now editing.
+ */
+export declare interface PlacedNote {
+    readonly note: DocumentNote;
+    readonly at: Located | null;
+    readonly range: DocumentRange | null;
+    /**
+     * The anchor this note would be stored with if it were written now.
+     *
+     * Carried here because the flat text it is cut from has just been built: a
+     * caller working it out again would walk the whole document a second time, on
+     * every keystroke. `null` for a note whose passage is gone — there is nothing
+     * to describe, and overwriting its anchor would lose the only record of what
+     * it was about.
+     */
+    readonly fresh: TextAnchor | null;
 }
 
 /**
@@ -3537,6 +3733,27 @@ export declare function supportsApiRange(range: string): boolean;
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
  *
+ * **3.25.0** is a local auxiliary model. `models` joins the capability list,
+ * and a handler may ask one through the service surface's `model.run(task,
+ * input)` and read its declared schema through `model.serving(task)`. The
+ * surface is pass-through — the input and output are opaque, because a model's
+ * request and response shape moves between versions of the model without the
+ * surface moving with it — and the shape is declared in the model's manifest,
+ * not in the surface. A model is a machine-level concern, downloaded into the
+ * application's configuration directory and shared by every project, reached by
+ * any handler whose manifest asked for the capability. A capability added and
+ * nothing an existing package names changed, so a minor.
+ *
+ * **3.24.0** gives `InstalledExtension` a `transport`. An entry that carries
+ * one is an MCP server the project declares rather than a package it depends
+ * on: there is no artefact, no version and no integrity, and the secrets it
+ * names live in the vault under `mcp-{id}` rather than on the record. The new
+ * types `McpTransportConfig`, `McpEnvSecret` and `McpHeaderSecret` name the
+ * shape of one. `version`, which was required, becomes optional for the same
+ * reason — an MCP server has nothing to version. Optional fields added and
+ * none removed, so a minor, and every package stating `^3.0` goes on
+ * installing.
+ *
  * **3.23.0** gives `InstalledExtension` an `icon`. The icon name the
  * manifest gave is now on the record, for the same reason `name` is: the
  * record travels with the repository, and an area drawing the project's
@@ -4310,7 +4527,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "3.23.0";
+export declare const SYNC_API_VERSION: "3.26.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.
@@ -4335,7 +4552,7 @@ export declare const SYNC_API_VERSION: "3.23.0";
  * machine: a phone that refused a package its owner's computer runs would be
  * deciding for the computer.
  */
-export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets", "net", "net.write", "vault", "background", "schedule", "work.agent", "agent.tools", "terminal", "tools.call"];
+export declare const SYNC_CAPABILITIES: readonly ["records", "agents.acp", "markdown.plugins", "native-menu", "folders", "sheets", "net", "net.write", "vault", "background", "schedule", "work.agent", "agent.tools", "terminal", "tools.call", "handler.call", "models"];
 
 export declare type SyncCapability = (typeof SYNC_CAPABILITIES)[number];
 
@@ -4406,6 +4623,44 @@ export declare interface TerminalRow {
 export declare interface TerminalSize {
     readonly rows: number;
     readonly cols: number;
+}
+
+/**
+ * Where something is in a body, said in the words of the body itself.
+ *
+ * A position cannot be stored. A path into the document dies on the first
+ * paragraph added above it, a character offset dies on the first edit above it,
+ * and an offset into the Markdown dies on the first save, which reflows the
+ * body and respells its bullets. So nothing here stores an address: it stores a
+ * quote with the text on either side of it, and works the address out again
+ * every time the record is opened. That is the W3C Web Annotation model, and it
+ * is what Hypothesis and Apache Annotator anchor with.
+ *
+ * Everything in this module is a function of strings and plain objects. The
+ * editor's own types are deliberately absent — what is anchored is text, the
+ * reading view has no editor at all, and a module that imported one could not
+ * be run by `node --test`.
+ *
+ * The offsets are into the *flat* text of the document — every text node in
+ * order, blocks separated by a newline — and never into the Markdown. The two
+ * differ by exactly the normalisation a save performs, which is why the flat
+ * text is the one that survives it: `*` becoming `-` and a soft-wrapped
+ * paragraph becoming one line are both spellings of a block, and a spelling is
+ * what the flat text has already dropped.
+ */
+/**
+ * Where the anchor was, as the text read then.
+ *
+ * `start` and `end` are a hint rather than the answer: checked first because
+ * the overwhelmingly common case is a document nobody has touched, and thrown
+ * away the moment the quote is not standing there.
+ */
+export declare interface TextAnchor {
+    readonly quote: string;
+    readonly prefix: string;
+    readonly suffix: string;
+    readonly start: number;
+    readonly end: number;
 }
 
 /**

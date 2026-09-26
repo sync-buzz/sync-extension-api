@@ -1,5 +1,5 @@
 {
-  "version": "3.23.0",
+  "version": "3.26.0",
   "values": [
     "ATTENTION_STATES",
     "Button",
@@ -28,6 +28,7 @@
     "KindMark",
     "Markdown",
     "MoveArea",
+    "NotesProvider",
     "PAGE_LIMIT",
     "PAUSE_MS",
     "PROJECT_KEY",
@@ -68,6 +69,7 @@
     "absenceLabel",
     "adoptWorktree",
     "buttonVariants",
+    "callExtensionHandler",
     "capabilitiesHere",
     "chooseAttachments",
     "cn",
@@ -76,6 +78,7 @@
     "createMemoryFolder",
     "deleteMemoryFolder",
     "deleteSession",
+    "describeAnchor",
     "describeMemoryFolder",
     "desktop",
     "discardWorktree",
@@ -89,6 +92,7 @@
     "isAttachedType",
     "isVersion",
     "kindIcon",
+    "locateAnchor",
     "memoryFolderToll",
     "memoryFolders",
     "modelOption",

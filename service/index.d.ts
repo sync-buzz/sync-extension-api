@@ -448,3 +448,45 @@ export type Handler = (payload: any) => unknown;
 
 /** What `register()` answers with: the handlers this package declares. */
 export type Handlers = Record<string, Handler>;
+
+/**
+ * Call another extension's tool handler from this one.
+ *
+ * **Behind the `"handler.call"` capability.** The called extension runs in its
+ * own isolate with its own capabilities and its own vault — the caller receives
+ * only the answer, never the called extension's secrets or hosts. This is the
+ * same path an agent's `sync_call` takes, reached from a handler.
+ *
+ * The tool is named `<extension id>.<tool name>` — the same shape an agent
+ * uses. The arguments are the tool's input schema, as the called extension
+ * declared it.
+ *
+ * The call is synchronous: the calling isolate's wall clock includes the time
+ * the called isolate runs. A handler that calls several tools sequentially may
+ * approach the wall-clock limit; `work.order` is the path for work that runs
+ * long.
+ */
+export declare const sync: {
+  call(tool: string, args?: Record<string, unknown>): Promise<unknown>;
+};
+
+/**
+ * Asking a local auxiliary model — a small model this machine has downloaded
+ * — to answer a typed task.
+ *
+ * **Behind the `"models"` capability.** The model is on this machine, the
+ * answer is local, and what a person is agreeing to is that this package may
+ * spend the machine's cycles on inference while nobody is looking.
+ *
+ * The surface is pass-through — `model.run(task, input)` with an opaque input
+ * and an opaque output — because a model's request and response shape moves
+ * between versions of the model without the shell's surface moving with it.
+ * The shape is declared in the model's manifest; the task is what the shell
+ * dispatches on.
+ */
+export declare const model: {
+  /** Ask the model to answer one task. The input shape is the model's own. */
+  run(task: string, input: unknown): Promise<unknown>;
+  /** The schema a model declares for a task, or `null` when none is declared. */
+  serving(task: string): Promise<unknown | null>;
+};

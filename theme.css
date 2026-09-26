@@ -57,6 +57,10 @@
   --color-hover: var(--state-hover);
   --color-selected: var(--state-selected);
   --color-focus: var(--focus-ring);
+
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-on: var(--accent-on);
+  --color-accent-text: var(--accent-text);
   --color-scrim: var(--scrim);
 
   --color-success: var(--status-success);

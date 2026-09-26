@@ -86,6 +86,13 @@ export const SERVICE_SURFACE = {
   net: {
     fetch: { calls: "net.fetch", takes: null },
   },
+  sync: {
+    call: { calls: "sync.call", takes: ["tool", "args"] },
+  },
+  model: {
+    run: { calls: "model.run", takes: ["task", "input"] },
+    serving: { calls: "model.serving", takes: ["task"] },
+  },
 };
 
 /**
@@ -124,6 +131,21 @@ export const SERVICE_CAPABILITIES = [
     calls: [SERVICE_SURFACE.net.fetch.calls],
     because:
       "The hosts your manifest names are the whole of what you may reach, and a manifest that names none reaches nowhere.",
+  },
+  {
+    capability: "handler.call",
+    calls: [SERVICE_SURFACE.sync.call.calls],
+    because:
+      "Calling another package's handler is something a person agrees to on the card, before anything of yours runs.",
+  },
+  {
+    capability: "models",
+    calls: [
+      SERVICE_SURFACE.model.run.calls,
+      SERVICE_SURFACE.model.serving.calls,
+    ],
+    because:
+      "Asking a local auxiliary model spends the machine's cycles rather than somebody's tokens, and a person agrees to that on the card.",
   },
 ];
 
