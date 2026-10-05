@@ -3734,6 +3734,30 @@ export declare function supportsApiRange(range: string): boolean;
  * point of the number is that a manifest can state a range and be believed. The
  * cost is honest major bumps, which is the cost of meaning it.
  *
+ * **3.27.0** renames the surface 3.26.0 introduced for remarks on a passage:
+ * `DocumentNote` becomes `DocumentComment`, `NotesOnPage` becomes
+ * `CommentsOnPage`, `NotesProvider` becomes `CommentsProvider`, and the
+ * `DocumentView` props follow — `onNoteWrite` is `onCommentWrite`,
+ * `onNoteClose` is `onCommentResolve`. `PlacedComment` is new: a comment with
+ * the place in the text it was found at. A *note* is what somebody writes for
+ * themselves on a page; what this is, is a remark addressed to whoever reads
+ * the passage next, and Apple's own text calls that a comment. The old spelling
+ * went out in 3.26.0 and nothing was built against it, which is why this is a
+ * minor and not a major — the number is honest only because the names it
+ * removed had nowhere to be in use. 3.26.0 is deprecated on npm so that no
+ * range resolves to a surface whose names are gone.
+ *
+ * **3.26.0** is two things that arrived together. `callExtensionHandler`, and
+ * `handler.call` beside it, let a handler run another package's handler — the
+ * same path an agent's `sync_call` takes, with the called package in its own
+ * isolate, its own capabilities and its own vault, and only the answer coming
+ * back. And a remark can be kept beside a passage without being written into
+ * it: `describeAnchor` and `locateAnchor` state and find a place in the text by
+ * the quote and the words either side of it rather than by an offset, which is
+ * what lets the remark survive the paragraph above it growing. `TextAnchor`,
+ * `Located`, `DocumentPoint` and `DocumentRange` name those shapes. Added and
+ * nothing removed, so a minor.
+ *
  * **3.25.0** is a local auxiliary model. `models` joins the capability list,
  * and a handler may ask one through the service surface's `model.run(task,
  * input)` and read its declared schema through `model.serving(task)`. The
