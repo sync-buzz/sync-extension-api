@@ -7,6 +7,7 @@
  *   sync-ext pack     [folder…] [--out <dir>]
  *   sync-ext registry [folder…] --archives <dir> --base-url <url>
  *                               [--out <file>] [--ledgers <dir>]
+ *                               [--servers <dir>]
  *
  * `registry` is the registry's CI rather than an author's: it reads what `pack`
  * produced and writes the index the application fetches. It is here rather than
@@ -51,7 +52,7 @@ function folders() {
     .filter((one) => !one.startsWith("--"))
     .filter((one, at, all) => all.indexOf(one) === at);
   // The value of an option is not a folder to operate on.
-  const values = ["out", "archives", "base-url", "ledgers"]
+  const values = ["out", "archives", "base-url", "ledgers", "servers"]
     .map((name) => option(name, null))
     .filter((value) => value !== null);
   const chosen = named.filter((one) => !values.includes(one));
@@ -66,7 +67,7 @@ function usage(code) {
       "  sync-ext build    [folder…] [--watch]",
       "  sync-ext check    [folder…]",
       "  sync-ext pack     [folder…] [--out <dir>]",
-      "  sync-ext registry [folder…] --archives <dir> --base-url <url>",
+      "  sync-ext registry [folder…] --archives <dir> --base-url <url> [--servers <dir>]",
       "",
       `contract ${runtime().version}`,
       "",
@@ -87,16 +88,24 @@ if (command === "registry") {
   const baseUrl = option("base-url", null);
   if (archives === null || baseUrl === null) usage(2);
   try {
-    const { out, written } = registry(folders(), {
+    const { out, written, described } = registry(folders(), {
       archives: resolve(archives),
       baseUrl,
       out: resolve(option("out", "registry.json")),
       ledgers: resolve(option("ledgers", "registry")),
+      // The hand-written half of the catalogue: entries for servers nobody
+      // packages. A repository with no such folder has none, which is the
+      // ordinary case for an author with one extension.
+      servers: resolve(option("servers", "servers")),
     });
     for (const one of written) {
       process.stdout.write(`${one.id} ${one.version} — ${one.artefact.sha256}\n`);
     }
-    process.stdout.write(`${out}: ${written.length} extensions\n`);
+    process.stdout.write(
+      `${out}: ${written.length} extensions${
+        described.length > 0 ? `, ${described.length} servers` : ""
+      }\n`,
+    );
   } catch (refused) {
     process.stderr.write(`${refused.message}\n`);
     process.exit(1);

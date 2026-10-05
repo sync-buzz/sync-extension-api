@@ -43,8 +43,18 @@ import { basename, join } from "node:path";
 
 import { manifestOf } from "./contract.mjs";
 
-/** The format the window reads. Bumped when the shape changes incompatibly. */
-export const REGISTRY_FORMAT = 1;
+/**
+ * The format the window reads. Bumped when the shape changes incompatibly.
+ *
+ * Format 2 made `artefact`, `version` and `syncApi` optional and added
+ * `transport`, so an entry can name an **MCP server** rather than a package
+ * anybody downloads: what such an entry is, is a way to reach a server plus what
+ * a card says about it. A build that reads only format 1 cannot parse an entry
+ * with no artefact, so the number is what tells it to refuse rather than fail
+ * halfway. `SUPPORTED_REGISTRY_FORMAT` in Sync's `sync-extensions` crate is the
+ * other half of it.
+ */
+export const REGISTRY_FORMAT = 2;
 
 /**
  * What a card says and what a search matches on, and nothing else.
@@ -183,6 +193,51 @@ function ledgerFor(folder, manifest, artefact, ledgers) {
 }
 
 /**
+ * The entries that are not packages: one file per MCP server, written by hand.
+ *
+ * They are read rather than derived, and that is the whole reason this exists.
+ * An MCP server is somebody else's program — there is no manifest of ours to
+ * generate a card from, and nothing to pack — so the card is prose somebody
+ * wrote, kept as a file per server so that adding one is a file rather than a
+ * line in a generated index. Before this, such entries survived only inside
+ * `registry.json`, which this function overwrites: the next release of any
+ * package silently dropped the whole catalogue.
+ *
+ * What is checked is what the window cannot do without: an id, a name, and a way
+ * to reach the server. An `artefact` is refused rather than ignored — an entry
+ * with one is a package, and a package belongs to a folder with a manifest,
+ * where its version and its archive can be checked against each other.
+ */
+function serversFrom(dir) {
+  if (dir === null || !existsSync(dir)) return [];
+
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".json"))
+    .sort()
+    .map((name) => {
+      const at = join(dir, name);
+      const entry = JSON.parse(readFileSync(at, "utf8"));
+      for (const required of ["id", "name"]) {
+        if (typeof entry[required] !== "string" || entry[required] === "") {
+          throw new Error(`${at} has no ${required}`);
+        }
+      }
+      if (entry.transport === undefined) {
+        throw new Error(`${at} names no transport, so nothing could reach it`);
+      }
+      if (entry.artefact !== undefined) {
+        throw new Error(
+          `${at} carries an artefact, which makes it a package rather than a server: give it a folder with a manifest instead`,
+        );
+      }
+      if (basename(name, ".json") !== entry.id) {
+        throw new Error(`${at} is the descriptor of ${entry.id}, so it is named wrongly`);
+      }
+      return entry;
+    });
+}
+
+/**
  * Builds the index and the ledgers from a set of extension folders.
  *
  * @param folders Each one an extension's own directory.
@@ -190,9 +245,10 @@ function ledgerFor(folder, manifest, artefact, ledgers) {
  * @param options.baseUrl What those archives are served from.
  * @param options.out Where `registry.json` goes.
  * @param options.ledgers Where `<id>.json` goes, one per extension.
+ * @param options.servers Where the hand-written server descriptors are, if any.
  * @returns What was written, for the caller to report.
  */
-export function registry(folders, { archives, baseUrl, out, ledgers }) {
+export function registry(folders, { archives, baseUrl, out, ledgers, servers = null }) {
   const entries = [];
   const pending = [];
 
@@ -219,6 +275,20 @@ export function registry(folders, { archives, baseUrl, out, ledgers }) {
     });
   }
 
+  // The catalogue's own entries, beside the packages and in the same list: the
+  // window reads one index, and what a card is drawn from is the entry rather
+  // than which half of the file it came from.
+  const described = serversFrom(servers);
+  const packaged = new Set(entries.map((one) => one.id));
+  for (const server of described) {
+    if (packaged.has(server.id)) {
+      throw new Error(
+        `${server.id} is both a package here and a server descriptor, and one id is one card`,
+      );
+    }
+    entries.push(server);
+  }
+
   // Sorted by id rather than by whatever order the folders were named in, so
   // that the same set of extensions produces the same file — an index that
   // reshuffled itself would show a diff on every release and hide the one line
@@ -233,5 +303,5 @@ export function registry(folders, { archives, baseUrl, out, ledgers }) {
   const index = { formatVersion: REGISTRY_FORMAT, extensions: entries };
   writeFileSync(out, `${JSON.stringify(index, null, 2)}\n`);
 
-  return { index, out, written: pending };
+  return { index, out, written: pending, described };
 }

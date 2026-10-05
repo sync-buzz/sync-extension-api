@@ -347,6 +347,23 @@ export declare function chooseAttachments(defaultPath: string): Promise<readonly
 export declare function cn(...inputs: ClassValue[]): string;
 
 /**
+ * What the open record's comments are, for the column beside it.
+ *
+ * `reveal` scrolls the page to a comment's passage and opens its card, which is
+ * what a row in that column does when it is chosen. A comment with no passage left
+ * has nothing to scroll to, and the row says so instead of moving the page.
+ */
+export declare interface CommentsOnPage {
+    readonly placed: readonly PlacedComment[];
+    readonly active: string | null;
+    readonly reveal: (key: string) => void;
+    /** Archive it: the comment leaves the text and stays in memory. */
+    readonly resolve: (key: string) => void;
+}
+
+export declare const CommentsProvider: Provider<(page: CommentsOnPage | null) => void>;
+
+/**
  * The context panel.
  *
  * This is where this application differs from the tools it competes with at a
@@ -358,19 +375,19 @@ export declare function cn(...inputs: ClassValue[]): string;
  * record open, that is the record: everything *about* it lives here so that the
  * centre can be nothing but the text. With no record open, it is the corpus.
  */
-export declare function ContextInspector({ corpus, open, projectPath, notes, }: {
+export declare function ContextInspector({ corpus, open, projectPath, comments, }: {
     corpus: Corpus;
     /** The record the workspace has open, if it has one. */
     open: OpenDocument | null;
     /** Where the project is, so the panel's open panel opens inside it. */
     projectPath: string;
     /**
-     * The notes on the open record, as its page reports them, or absent where
-     * notes are not kept. What is true *of* a record is edited above; a note is
+     * The comments on the open record, as its page reports them, or absent where
+     * comments are not kept. What is true *of* a record is edited above; a comment is
      * about a passage of it, which is why it is a section of its own under that
      * rather than another field in it.
      */
-    notes?: NotesOnPage | null;
+    comments?: CommentsOnPage | null;
 }): JSX.Element;
 
 /**
@@ -623,6 +640,20 @@ export declare function discardWorktree(args: {
 }): Promise<void>;
 
 /**
+ * One comment, as the store holds it.
+ *
+ * `key` is the key of the comment's own record, which is what every command here
+ * refers to: closing one, revealing one, saying which one a highlight belongs
+ * to. The body is the comment's text, and it is drawn nowhere near the page's own
+ * type scale — a comment is a remark about the document, not a paragraph of it.
+ */
+export declare interface DocumentComment {
+    readonly key: string;
+    readonly body: string;
+    readonly anchor: TextAnchor;
+}
+
+/**
  * A record as the window has it: what the store answered, with whatever has been
  * typed into it on top.
  *
@@ -639,20 +670,6 @@ export declare interface DocumentDraft {
     readonly observed: readonly string[];
     readonly archived: boolean;
     readonly fields: Readonly<Record<string, unknown>>;
-}
-
-/**
- * One note, as the store holds it.
- *
- * `key` is the key of the note's own record, which is what every command here
- * refers to: closing one, revealing one, saying which one a highlight belongs
- * to. The body is the note's text, and it is drawn nowhere near the page's own
- * type scale — a note is a remark about the document, not a paragraph of it.
- */
-export declare interface DocumentNote {
-    readonly key: string;
-    readonly body: string;
-    readonly anchor: TextAnchor;
 }
 
 /**
@@ -709,7 +726,7 @@ export declare interface DocumentRange {
  * round trip through blocks. That is checked by round-tripping it, not guessed
  * at, and the reason is on the page.
  */
-export declare function DocumentView({ open, icon, note, onBack, backLabel, fixed, onArchive, onDelete, justCreated, notes, onNoteWrite, onNoteRewrite, onNoteClose, onNoteMoved, }: {
+export declare function DocumentView({ open, icon, note, onBack, backLabel, fixed, onArchive, onDelete, justCreated, comments, onCommentWrite, onCommentRewrite, onCommentResolve, onCommentMoved, }: {
     open: OpenDocument;
     /** The mark for this record's type, from the published corpus. */
     icon: string | null | undefined;
@@ -731,18 +748,18 @@ export declare function DocumentView({ open, icon, note, onBack, backLabel, fixe
     /** True when this record was created a moment ago and still has no name. */
     justCreated?: boolean;
     /**
-     * The notes on this record, and what may happen to one.
+     * The comments on this record, and what may happen to one.
      *
      * Passed through to the page, which shades the passages and shows the cards.
-     * All four are absent where notes are not kept, and then this view is exactly
-     * what it was before them — the shell keeps no notes of its own, and what a
-     * note is stored as belongs to whoever opened this view.
+     * All four are absent where comments are not kept, and then this view is exactly
+     * what it was before them — the shell keeps no comments of its own, and what a
+     * comment is stored as belongs to whoever opened this view.
      */
-    notes?: readonly DocumentNote[];
-    onNoteWrite?: (anchor: TextAnchor, body: string) => void;
-    onNoteRewrite?: (key: string, body: string) => void;
-    onNoteClose?: (key: string) => void;
-    onNoteMoved?: (moves: readonly {
+    comments?: readonly DocumentComment[];
+    onCommentWrite?: (anchor: TextAnchor, body: string) => void;
+    onCommentRewrite?: (key: string, body: string) => void;
+    onCommentResolve?: (key: string) => void;
+    onCommentMoved?: (moves: readonly {
         readonly key: string;
         readonly anchor: TextAnchor;
     }[]) => void;
@@ -2208,22 +2225,6 @@ export declare interface NetResponse {
 }
 
 /**
- * What the open record's notes are, for the column beside it.
- *
- * `reveal` scrolls the page to a note's passage and opens its card, which is
- * what a row in that column does when it is chosen. A note with no passage left
- * has nothing to scroll to, and the row says so instead of moving the page.
- */
-export declare interface NotesOnPage {
-    readonly placed: readonly PlacedNote[];
-    readonly active: string | null;
-    readonly reveal: (key: string) => void;
-    readonly close: (key: string) => void;
-}
-
-export declare const NotesProvider: Provider<(page: NotesOnPage | null) => void>;
-
-/**
  * The record the window has open, read whole and written back as it is edited.
  *
  * Separate from the list it was opened from: a row carries what a row is scanned
@@ -2448,22 +2449,22 @@ export declare interface PermissionRequest {
 }
 
 /**
- * A note and the passage it covers today.
+ * A comment and the passage it covers today.
  *
- * `at` is `null` for a note whose passage is gone. That is a state with a place
- * in the interface rather than a note to drop: somebody wrote it about words
+ * `at` is `null` for a comment whose passage is gone. That is a state with a place
+ * in the interface rather than a comment to drop: somebody wrote it about words
  * that are no longer there, and they are usually not the person now editing.
  */
-export declare interface PlacedNote {
-    readonly note: DocumentNote;
+export declare interface PlacedComment {
+    readonly comment: DocumentComment;
     readonly at: Located | null;
     readonly range: DocumentRange | null;
     /**
-     * The anchor this note would be stored with if it were written now.
+     * The anchor this comment would be stored with if it were written now.
      *
      * Carried here because the flat text it is cut from has just been built: a
      * caller working it out again would walk the whole document a second time, on
-     * every keystroke. `null` for a note whose passage is gone — there is nothing
+     * every keystroke. `null` for a comment whose passage is gone — there is nothing
      * to describe, and overwriting its anchor would lose the only record of what
      * it was about.
      */
@@ -4527,7 +4528,7 @@ export declare function supportsApiRange(range: string): boolean;
  * `AreaModule`, `ActivationResult` — arrived in the same commit, which on its
  * own would have been a minor.
  */
-export declare const SYNC_API_VERSION: "3.26.0";
+export declare const SYNC_API_VERSION: "3.27.0";
 
 /**
  * What this build can do, as opposed to what its surface looks like.

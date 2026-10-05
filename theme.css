@@ -63,6 +63,9 @@
   --color-accent-text: var(--accent-text);
   --color-scrim: var(--scrim);
 
+  --color-comment-mark: var(--comment-mark);
+  --color-comment-mark-open: var(--comment-mark-open);
+
   --color-success: var(--status-success);
   --color-warning: var(--status-warning);
   --color-danger: var(--status-danger);
